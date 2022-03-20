@@ -138,7 +138,6 @@ checksum = "229d53d58899083193af11e15917b5640cd40b29ff475a1fe4ef725deb02d0f2"
 [[package]]
 name = "kapp"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kapp_gl_context",
  "kapp_platforms",
@@ -149,7 +148,6 @@ dependencies = [
 [[package]]
 name = "kapp_gl_context"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kapp_platform_common",
  "kwasm",
@@ -161,7 +159,6 @@ dependencies = [
 [[package]]
 name = "kapp_platform_common"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kserde",
  "raw-window-handle",
@@ -170,7 +167,6 @@ dependencies = [
 [[package]]
 name = "kapp_platforms"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kapp_platform_common",
  "klog",
@@ -182,7 +178,6 @@ dependencies = [
 [[package]]
 name = "kaudio"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "hound",
  "kwasm",
@@ -192,7 +187,6 @@ dependencies = [
 [[package]]
 name = "kcolor"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kecs",
  "kmath",
@@ -203,7 +197,6 @@ dependencies = [
 [[package]]
 name = "kecs"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kecs_derive",
  "ktasks",
@@ -212,7 +205,6 @@ dependencies = [
 [[package]]
 name = "kecs_derive"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kecs_derive_impl",
  "kreflect_common",
@@ -222,7 +214,6 @@ dependencies = [
 [[package]]
 name = "kecs_derive_impl"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kreflect_common",
 ]
@@ -230,7 +221,6 @@ dependencies = [
 [[package]]
 name = "kgltf"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kserde",
 ]
@@ -238,7 +228,6 @@ dependencies = [
 [[package]]
 name = "kgraphics"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "gl33",
  "kapp",
@@ -251,7 +240,6 @@ dependencies = [
 [[package]]
 name = "klog"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kwasm",
 ]
@@ -259,7 +247,6 @@ dependencies = [
 [[package]]
 name = "kmath"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kserde",
 ]
@@ -267,7 +254,6 @@ dependencies = [
 [[package]]
 name = "koi"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "bytemuck",
  "hdrldr",
@@ -299,7 +285,6 @@ checksum = "933f5089153715eca1db92432ae036e7b10fbc412e3a39c99f0c51e1ceff2de7"
 [[package]]
 name = "kphysics"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kmath",
 ]
@@ -307,12 +292,10 @@ dependencies = [
 [[package]]
 name = "kreflect_common"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 
 [[package]]
 name = "kserde"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kserde_derive",
 ]
@@ -320,7 +303,6 @@ dependencies = [
 [[package]]
 name = "kserde_derive"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kreflect_common",
  "kserde_derive_impl",
@@ -329,7 +311,6 @@ dependencies = [
 [[package]]
 name = "kserde_derive_impl"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "kreflect_common",
 ]
@@ -337,7 +318,6 @@ dependencies = [
 [[package]]
 name = "ktasks"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "klog",
  "kwasm",
@@ -347,7 +327,6 @@ dependencies = [
 [[package]]
 name = "kui"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "fontdb",
  "fontdue",
@@ -360,7 +339,6 @@ dependencies = [
 [[package]]
 name = "kwasm"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 dependencies = [
  "once_cell",
  "wasm_set_stack_pointer",
@@ -511,7 +489,6 @@ checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
 [[package]]
 name = "wasm_set_stack_pointer"
 version = "0.1.0"
-source = "git+https://github.com/kettle11/koi#5b0ec0820bcb8f0ca8fc4947fc24c93bdc1ae447"
 
 [[package]]
 name = "wide"

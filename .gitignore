@@ -1,1 +1,3 @@
 target/*
+/web_build/wasm.wasm
+/web_build/assets

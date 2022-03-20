@@ -198,6 +198,10 @@ fn generate_terrain(
 
 fn main() {
     App::new().setup_and_run(|world: &mut World| {
+        world
+            .get_singleton::<Graphics>()
+            .set_automatic_redraw(false);
+
         // The light and shadow caster is spawned as part of this.
         spawn_skybox(world, "assets/qwantani_1k.hdr");
 
@@ -218,7 +222,7 @@ fn main() {
         // Spawn water
         let material = (|materials: &mut Assets<Material>| {
             materials.add(new_pbr_material(
-                Shader::PHYSICALLY_BASED_TRANSPARENT,
+                Shader::PHYSICALLY_BASED_TRANSPARENT_DOUBLE_SIDED,
                 PBRProperties {
                     // Water is perfectly smooth but most of the time we're viewing it from a distance when it could be considered rough.
                     roughness: 0.02,
@@ -325,11 +329,37 @@ fn main() {
                     offset = Vec3::new(random.f32(), 0.0, random.f32()) * 800000.0;
                     regenerate = true;
                 }
-                Event::Draw => {}
+                Event::KappEvent(event) => {
+                    match event {
+                        KappEvent::KeyDown { .. }
+                        | KappEvent::PointerDown { .. }
+                        | KappEvent::PointerUp { .. }
+                        | KappEvent::Scroll { .. }
+                        | KappEvent::PinchGesture { .. }
+                        // Probably this WindowResized check should be in `koi` instead.
+                        | KappEvent::WindowResized { .. } =>  request_window_redraw(world),
+                        _ => {},
+                    };
+
+                    let input = world.get_singleton::<Input>();
+                    if input.key(Key::W)
+                        || input.key(Key::A)
+                        || input.key(Key::S)
+                        || input.key(Key::D)
+                        || input.pointer_button(PointerButton::Secondary)
+                    {
+                        request_window_redraw(world)
+                    }
+                }
+                Event::Draw => {
+                    //    println!("DRAWING");
+                }
                 _ => {}
             }
 
             if regenerate {
+                request_window_redraw(world);
+
                 let mut brushes = Vec::new();
                 let mut random = Random::new();
 
@@ -340,9 +370,9 @@ fn main() {
                     brushes.push(Brush::new(
                         Vec2::new(random.f32(), random.f32()) * max_size
                             + Vec2::new(offset.x, offset.z),
-                        random.range_f32(0.0..100.),
-                        inner_radius + random.range_f32(0.0..100.),
-                        random.f32() * 0.85,
+                        random.range_f32(0.0..150.),
+                        inner_radius + random.range_f32(30.0..150.),
+                        random.f32() * 0.3,
                         match random.range_u32(0..2) {
                             0 => {
                                 let v = random.range_f32(0.4..5.0);
