@@ -45,33 +45,40 @@ impl Brush {
     }
 }
 
-fn sample_with_octaves(
+fn sample_with_octaves<const LANES: usize>(
     noise: &mut clatter::Simplex2d,
     scale: f32,
     persistence: f32,
-    octaves: usize,
     x: f32,
     y: f32,
-) -> (f32, f32) {
+) -> f32
+where
+    std::simd::LaneCount<LANES>: std::simd::SupportedLaneCount,
+{
     let mut frequency = 1.0;
     let mut amplitude = 1.0;
-
-    let mut v = 0.0;
-    let mut derivative = 0.0;
     let mut max_value = 0.0;
-    for _ in 0..octaves {
-        let sample = noise.sample([
-            core::simd::Simd::<f32, 2>::splat(x * frequency * scale),
-            core::simd::Simd::<f32, 2>::splat(y * frequency * scale),
-        ]);
-        v += sample.value[0] * amplitude;
-        derivative += sample.derivative[0][0] * amplitude;
+
+    let mut amplitudes: [f32; LANES] = [0.0; LANES];
+    let mut frequencies: [f32; LANES] = [0.0; LANES];
+
+    for i in 0..LANES {
+        amplitudes[i] = amplitude;
+        frequencies[i] = frequency;
 
         max_value += amplitude;
         amplitude *= persistence;
         frequency *= 2.0;
     }
-    (v / max_value, derivative / max_value)
+
+    let amplitudes = core::simd::Simd::<f32, LANES>::from_array(amplitudes);
+    let frequencies = core::simd::Simd::<f32, LANES>::from_array(frequencies);
+    let sample = noise.sample([
+        core::simd::Simd::<f32, LANES>::splat(x * scale) * frequencies,
+        core::simd::Simd::<f32, LANES>::splat(y * scale) * frequencies,
+    ]) * amplitudes;
+
+    sample.value.reduce_sum() / max_value
 }
 fn generate_terrain(
     offset: Vec3,
@@ -123,7 +130,7 @@ fn generate_terrain(
             let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
             let p = base_pos + offset;
 
-            let (y_raw, _) = sample_with_octaves(&mut noise, 0.004, 0.5, 16, p.x, p.z);
+            let y_raw = sample_with_octaves::<16>(&mut noise, 0.004, 0.5, p.x, p.z);
             let y_raw = y_raw * height;
             let y = y_raw;
 
