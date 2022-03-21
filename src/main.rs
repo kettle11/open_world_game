@@ -80,6 +80,109 @@ where
 
     sample.value.reduce_sum() / max_value
 }
+fn generate_terrain_data(
+    offset: Vec3,
+    size: usize,
+    scale: f32,
+    height: f32,
+    y_smoothing: f32,
+    resolution: usize,
+    brushes: &[Brush],
+) -> Vec<f32> {
+    let mut noise = clatter::Simplex2d::new();
+
+    let mut heights = Vec::with_capacity(resolution * resolution);
+    for i in 0..resolution {
+        for j in 0..resolution {
+            let i = (i as f32 / resolution as f32) * size as f32;
+            let j = (j as f32 / resolution as f32) * size as f32;
+
+            let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
+            let p = base_pos + offset;
+
+            let y_raw = sample_with_octaves::<16>(&mut noise, 0.004, 0.5, p.x, p.z);
+            let y_raw = y_raw * height;
+            let y = y_raw;
+
+            /*
+            if y_raw > y_smoothing {
+                y += 1.0;
+            }
+
+            if y_raw > y_smoothing * 1.4 {
+                y += 1.0;
+            }
+
+            if y_raw > y_smoothing * 1.8 {
+                y += 1.0;
+            }
+            */
+
+            let t = (y.abs() / y_smoothing).min(1.0);
+            let mut y = y * t * t;
+
+            if y.abs() < 0.001 {
+                y += 0.01;
+            }
+
+            for brush in brushes.iter() {
+                y = brush.apply(Vec2::new(p.x, p.z), y);
+            }
+
+            heights.push(y)
+        }
+    }
+    heights
+}
+
+fn generate_terrain_mesh(
+    scale: f32,
+    resolution: usize,
+    mesh_offset: Vec3,
+    heights: &[f32],
+) -> MeshData {
+    let mut positions = Vec::with_capacity(resolution * resolution);
+    let mut colors = Vec::with_capacity(resolution * resolution);
+    let mut indices = Vec::with_capacity(2 * resolution * resolution);
+
+    for i in 0..resolution {
+        for j in 0..resolution {
+            let y = heights[i * resolution + j];
+            let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
+            let p = Vec3::new(base_pos.x, y, base_pos.z);
+            positions.push(p + mesh_offset);
+
+            let color = if y > 20.0 {
+                Color::WHITE
+            } else if y > 15.0 {
+                Color::BLACK.with_lightness(0.7)
+            } else if y > 0.1 {
+                Color::new_from_bytes(149, 130, 70, 255)
+            } else {
+                Color::new_from_bytes(197, 167, 132, 255)
+            };
+            colors.push(color.to_linear_srgb());
+        }
+    }
+
+    let size = resolution as u32;
+    for i in 0..size - 1 {
+        for j in 0..size - 1 {
+            indices.push([i * size + j, (i + 1) * size + j + 1, (i + 1) * size + j]);
+            indices.push([i * size + j, i * size + j + 1, (i + 1) * size + j + 1]);
+        }
+    }
+
+    let mut mesh_data = MeshData {
+        positions,
+        colors,
+        indices,
+        ..Default::default()
+    };
+    calculate_normals(&mut mesh_data);
+    mesh_data
+}
+
 fn generate_terrain(
     offset: Vec3,
     size: usize,
@@ -130,7 +233,7 @@ fn generate_terrain(
             let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
             let p = base_pos + offset;
 
-            let y_raw = sample_with_octaves::<16>(&mut noise, 0.004, 0.5, p.x, p.z);
+            let y_raw = sample_with_octaves::<32>(&mut noise, 0.004, 0.5, p.x, p.z);
             let y_raw = y_raw * height;
             let y = y_raw;
 
@@ -151,7 +254,7 @@ fn generate_terrain(
             let t = (y.abs() / y_smoothing).min(1.0);
             let mut y = y * t * t;
 
-            if y.abs() < 0.0001 {
+            if y.abs() < 0.001 {
                 y += 0.01;
             }
 
@@ -192,6 +295,7 @@ fn generate_terrain(
         texture_coordinates: Vec::new(),
         colors,
     };
+
     calculate_normals(&mut mesh_data);
     mesh_data
 }
@@ -252,7 +356,7 @@ fn main() {
             ))
         })
         .run(world);
-        let tiles = 5;
+        let tiles = 1;
         let mut new_meshes: Vec<_> = Vec::new();
         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
             for _ in 0..tiles * tiles {
@@ -311,16 +415,19 @@ fn main() {
         let mut offset = Vec3::new(random.f32(), 0.0, random.f32()) * 100.0;
         let mut regenerate = true;
 
+        let mut brush_count = 20;
         move |event, world| {
             match event {
                 Event::KappEvent(KappEvent::KeyDown { key: Key::Up, .. }) => {
-                    y_smoothing += 0.5;
-                    y_smoothing = y_smoothing.max(0.0);
+                    // y_smoothing += 0.5;
+                    // y_smoothing = y_smoothing.max(0.0);
+                    brush_count = 20;
                     regenerate = true;
                 }
                 Event::KappEvent(KappEvent::KeyDown { key: Key::Down, .. }) => {
-                    y_smoothing -= 0.5;
-                    y_smoothing = y_smoothing.max(0.0);
+                    // y_smoothing -= 0.5;
+                    // y_smoothing = y_smoothing.max(0.0);
+                    brush_count = 0;
                     regenerate = true;
                 }
                 Event::KappEvent(KappEvent::KeyDown {
@@ -336,6 +443,7 @@ fn main() {
                         | KappEvent::PointerUp { .. }
                         | KappEvent::Scroll { .. }
                         | KappEvent::PinchGesture { .. }
+                        | KappEvent::PointerMoved{.. }
                         // Probably this WindowResized check should be in `koi` instead.
                         | KappEvent::WindowResized { .. } =>  request_window_redraw(world),
                         _ => {},
@@ -364,14 +472,14 @@ fn main() {
                 let mut random = Random::new();
 
                 let max_size = size as f32;
-                for _ in 0..10 {
-                    let inner_radius = random.range_f32(0.0..200.);
+                for _ in 0..brush_count {
+                    let inner_radius = random.range_f32(0.0..40.);
 
                     brushes.push(Brush::new(
                         Vec2::new(random.f32(), random.f32()) * max_size
                             + Vec2::new(offset.x, offset.z),
-                        random.range_f32(0.0..150.),
-                        inner_radius + random.range_f32(30.0..150.),
+                        inner_radius,
+                        inner_radius * 3.0,
                         random.f32() * 0.3,
                         match random.range_u32(0..2) {
                             0 => {
@@ -403,6 +511,36 @@ fn main() {
                         for j in 0..tiles {
                             let offset =
                                 offset + Vec3::new(i as f32, 0.0, j as f32) * (size - 8.0) * scale;
+
+                            let resolution = if i == tiles / 2 && j == tiles / 2 {
+                                512
+                            } else {
+                                64
+                            };
+                            let terrain_heights = generate_terrain_data(
+                                offset,
+                                size as usize,
+                                scale,
+                                size * scale * 0.2,
+                                y_smoothing,
+                                if i == tiles / 2 && j == tiles / 2 {
+                                    512
+                                } else {
+                                    64
+                                },
+                                &brushes,
+                            );
+                            let mesh_data = generate_terrain_mesh(
+                                scale,
+                                resolution,
+                                Vec3::new(i as f32, 0.0, j as f32) * (size - 8.0) * scale
+                                    - (Vec3::new(tiles as f32, 0.0, tiles as f32)
+                                        * (size - 8.0)
+                                        * scale)
+                                        / 2.0,
+                                &terrain_heights,
+                            );
+                            /*
                             let mesh_data = generate_terrain(
                                 offset,
                                 size as usize,
@@ -421,6 +559,7 @@ fn main() {
                                         / 2.0,
                                 &brushes,
                             );
+                            */
                             *meshes.get_mut(&new_meshes[i * tiles + j]) =
                                 Mesh::new(graphics, mesh_data);
                         }
@@ -435,14 +574,22 @@ fn main() {
 }
 
 pub fn calculate_normals(mesh_data: &mut MeshData) {
+    let mut normal_use_count = vec![0; mesh_data.positions.len()];
     let mut normals = vec![Vec3::ZERO; mesh_data.positions.len()];
     for [p0, p1, p2] in mesh_data.indices.iter().cloned() {
         let dir0 = mesh_data.positions[p1 as usize] - mesh_data.positions[p0 as usize];
         let dir1 = mesh_data.positions[p2 as usize] - mesh_data.positions[p1 as usize];
         let normal = dir0.cross(dir1).normalized();
-        normals[p0 as usize] = normal;
-        normals[p1 as usize] = normal;
-        normals[p2 as usize] = normal;
+        normal_use_count[p0 as usize] += 1;
+        normal_use_count[p1 as usize] += 1;
+        normal_use_count[p2 as usize] += 1;
+        normals[p0 as usize] += normal;
+        normals[p1 as usize] += normal;
+        normals[p2 as usize] += normal;
+    }
+
+    for (normal, &normal_use_count) in normals.iter_mut().zip(normal_use_count.iter()) {
+        *normal = *normal / normal_use_count as f32;
     }
 
     mesh_data.normals = normals;
