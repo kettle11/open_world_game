@@ -2,6 +2,8 @@
 
 use koi::*;
 
+mod pathfinding;
+
 struct Brush {
     max_influence: f32,
     center: Vec2,
@@ -88,10 +90,11 @@ fn generate_terrain_data(
     y_smoothing: f32,
     resolution: usize,
     brushes: &[Brush],
-) -> Vec<f32> {
+) -> Terrain {
     let mut noise = clatter::Simplex2d::new();
 
     let mut heights = Vec::with_capacity(resolution * resolution);
+    let mut colors = Vec::with_capacity(resolution * resolution);
     for i in 0..resolution {
         for j in 0..resolution {
             let i = (i as f32 / resolution as f32) * size as f32;
@@ -129,29 +132,6 @@ fn generate_terrain_data(
                 y = brush.apply(Vec2::new(p.x, p.z), y);
             }
 
-            heights.push(y)
-        }
-    }
-    heights
-}
-
-fn generate_terrain_mesh(
-    scale: f32,
-    resolution: usize,
-    mesh_offset: Vec3,
-    heights: &[f32],
-) -> MeshData {
-    let mut positions = Vec::with_capacity(resolution * resolution);
-    let mut colors = Vec::with_capacity(resolution * resolution);
-    let mut indices = Vec::with_capacity(2 * resolution * resolution);
-
-    for i in 0..resolution {
-        for j in 0..resolution {
-            let y = heights[i * resolution + j];
-            let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
-            let p = Vec3::new(base_pos.x, y, base_pos.z);
-            positions.push(p + mesh_offset);
-
             let color = if y > 20.0 {
                 Color::WHITE
             } else if y > 15.0 {
@@ -161,6 +141,32 @@ fn generate_terrain_mesh(
             } else {
                 Color::new_from_bytes(197, 167, 132, 255)
             };
+            colors.push(color);
+            heights.push(y)
+        }
+    }
+    Terrain { heights, colors }
+}
+
+fn generate_terrain_mesh(
+    scale: f32,
+    resolution: usize,
+    mesh_offset: Vec3,
+    terrain: &Terrain,
+    //  heights: &[f32],
+) -> MeshData {
+    let mut positions = Vec::with_capacity(resolution * resolution);
+    let mut colors = Vec::with_capacity(resolution * resolution);
+    let mut indices = Vec::with_capacity(2 * resolution * resolution);
+
+    for i in 0..resolution {
+        for j in 0..resolution {
+            let y = terrain.heights[i * resolution + j];
+            let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
+            let p = Vec3::new(base_pos.x, y, base_pos.z);
+            positions.push(p + mesh_offset);
+
+            let color = terrain.colors[i * resolution + j];
             colors.push(color.to_linear_srgb());
         }
     }
@@ -172,6 +178,33 @@ fn generate_terrain_mesh(
             indices.push([i * size + j, i * size + j + 1, (i + 1) * size + j + 1]);
         }
     }
+
+    let mut add_side = |start: Vec2i, step: Vec2i| {
+        let mut current_p = start;
+        for i in 0..size - 1 {
+            let y = terrain.heights[current_p.x as usize * resolution + current_p.y as usize];
+            let base_pos = Vec3::new(current_p.x as f32, 0.0, current_p.y as f32) * scale;
+            let p = Vec3::new(base_pos.x, y, base_pos.z) + mesh_offset;
+
+            let len = positions.len() as u32;
+
+            positions.push(Vec3::new(p.x, -30.0, p.z));
+            positions.push(Vec3::new(p.x, p.y, p.z));
+
+            colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
+            colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
+
+            if i > 0 {
+                indices.push([len, len + 1, len - 1]);
+                indices.push([len, len - 1, len - 2]);
+            }
+            current_p += step;
+        }
+    };
+    add_side(Vec2i::X * (resolution - 1) as i32, -Vec2i::X);
+    add_side(Vec2i::Y * (resolution) as i32, Vec2i::X);
+
+    // add_side(Vec3u::X * resolution, Vec3u::Z);
 
     let mut mesh_data = MeshData {
         positions,
@@ -183,121 +216,9 @@ fn generate_terrain_mesh(
     mesh_data
 }
 
-fn generate_terrain(
-    offset: Vec3,
-    size: usize,
-    scale: f32,
-    height: f32,
-    y_smoothing: f32,
-    resolution: usize,
-    mesh_offset: Vec3,
-    brushes: &[Brush],
-) -> MeshData {
-    // Crater
-    /*
-    Brush::new(
-        Vec2::fill(200.) * scale + Vec2::new(offset.x, offset.z),
-        50. * scale,
-        300. * scale,
-        |_| -10.0,
-    ) */
-    /*
-    let brushes = [
-        Brush::new(
-            Vec2::fill(200.) * scale + Vec2::new(offset.x, offset.z),
-            50. * scale,
-            300. * scale,
-            1.0,
-            |p| p.y * 2.0,
-        ),
-        Brush::new(
-            Vec2::fill(300.) * scale + Vec2::new(offset.x, offset.z),
-            000. * scale,
-            200. * scale,
-            0.8,
-            |p| 5.0,
-        ),
-    ];
-    */
-    let mut noise = clatter::Simplex2d::new();
-
-    let mut positions = Vec::with_capacity(resolution * resolution);
-    let mut colors = Vec::with_capacity(resolution * resolution);
-
-    let mut indices = Vec::with_capacity(2 * resolution * resolution);
-    for i in 0..resolution {
-        for j in 0..resolution {
-            let i = (i as f32 / resolution as f32) * size as f32;
-            let j = (j as f32 / resolution as f32) * size as f32;
-
-            let base_pos = Vec3::new(i as f32, 0.0, j as f32) * scale;
-            let p = base_pos + offset;
-
-            let y_raw = sample_with_octaves::<32>(&mut noise, 0.004, 0.5, p.x, p.z);
-            let y_raw = y_raw * height;
-            let y = y_raw;
-
-            /*
-            if y_raw > y_smoothing {
-                y += 1.0;
-            }
-
-            if y_raw > y_smoothing * 1.4 {
-                y += 1.0;
-            }
-
-            if y_raw > y_smoothing * 1.8 {
-                y += 1.0;
-            }
-            */
-
-            let t = (y.abs() / y_smoothing).min(1.0);
-            let mut y = y * t * t;
-
-            if y.abs() < 0.001 {
-                y += 0.01;
-            }
-
-            for brush in brushes.iter() {
-                y = brush.apply(Vec2::new(p.x, p.z), y);
-            }
-
-            //let t = ((y - 10.0).abs() / y_smoothing).min(1.0);
-            //let y = y * t * t;
-
-            let p = Vec3::new(base_pos.x, y, base_pos.z);
-            positions.push((p + mesh_offset) * 3.0);
-
-            let color = if y > 20.0 {
-                Color::WHITE
-            } else if y > 15.0 {
-                Color::BLACK.with_lightness(0.7)
-            } else if y > 0.1 {
-                Color::new_from_bytes(149, 130, 70, 255)
-            } else {
-                Color::new_from_bytes(197, 167, 132, 255)
-            };
-            colors.push(color.to_linear_srgb());
-        }
-    }
-    let size = resolution as u32;
-    for i in 0..size - 1 {
-        for j in 0..size - 1 {
-            indices.push([i * size + j, (i + 1) * size + j + 1, (i + 1) * size + j]);
-            indices.push([i * size + j, i * size + j + 1, (i + 1) * size + j + 1]);
-        }
-    }
-
-    let mut mesh_data = MeshData {
-        positions,
-        indices,
-        normals: Vec::new(),
-        texture_coordinates: Vec::new(),
-        colors,
-    };
-
-    calculate_normals(&mut mesh_data);
-    mesh_data
+struct Terrain {
+    heights: Vec<f32>,
+    colors: Vec<Color>,
 }
 
 fn main() {
@@ -411,13 +332,80 @@ fn main() {
         commands.apply(world);
         let mut random = Random::new();
 
-        let mut y_smoothing: f32 = 5.0;
+        let y_smoothing: f32 = 5.0;
         let mut offset = Vec3::new(random.f32(), 0.0, random.f32()) * 100.0;
         let mut regenerate = true;
 
         let mut brush_count = 20;
+
+        let mut pathfinder = pathfinding::Pathfinder::new();
+        let mut terrain = Terrain {
+            heights: Vec::new(),
+            colors: Vec::new(),
+        };
+
+        let mut current_path = Vec::new();
+
+        let mut last_clicked_position = None;
+
+        let resolution = 512;
+
+        let mut fonts = Fonts::empty();
+        fonts.load_default_fonts();
+
+        let mut standard_context = StandardContext::new(
+            StandardStyle {
+                primary_color: Color::from_srgb_hex(0xC4C4C4, 1.0),
+                padding: 10.0,
+                rounding: 2.0,
+                ..Default::default()
+            },
+            StandardInput::default(),
+            fonts,
+        );
+
+        let mut root_widget = padding(
+            |_| 10.0,
+            row((button("New", |ui_state: &mut UIState| {
+                ui_state.generate = true
+            }),)),
+        );
+
+        let mut ui_manager = UIManager::new(world);
+        world.spawn((Transform::new(), Camera::new_for_user_interface()));
+
+        #[derive(Copy, Clone)]
+        struct UIState {
+            generate: bool,
+        }
+
+        let mut ui_state = UIState { generate: false };
         move |event, world| {
+            match &event {
+                Event::KappEvent(e) => {
+                    if ui_manager.handle_event(e, &mut ui_state, &mut standard_context) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+
+            if ui_state.generate {
+                ui_state.generate = false;
+                offset = Vec3::new(random.f32(), 0.0, random.f32()) * 800000.0;
+                regenerate = true;
+            }
+            let mut update_mesh = false;
             match event {
+                Event::KappEvent(KappEvent::KeyDown { key: Key::P, .. }) => {
+                    pathfinder.pathfind(
+                        Vec2u::fill(0),
+                        Vec2u::fill(resolution - 1),
+                        Vec2u::fill(resolution),
+                        &terrain.heights,
+                        &mut current_path,
+                    );
+                }
                 Event::KappEvent(KappEvent::KeyDown { key: Key::Up, .. }) => {
                     // y_smoothing += 0.5;
                     // y_smoothing = y_smoothing.max(0.0);
@@ -435,6 +423,53 @@ fn main() {
                 }) => {
                     offset = Vec3::new(random.f32(), 0.0, random.f32()) * 800000.0;
                     regenerate = true;
+                }
+                Event::KappEvent(KappEvent::PointerDown {
+                    x,
+                    y,
+                    button: PointerButton::Primary,
+                    ..
+                }) => {
+                    (|meshes: &Assets<Mesh>, cameras: Query<(&Transform, &Camera)>| {
+                        let (camera_transform, camera) = cameras.iter().next().unwrap();
+                        let pointer_ray = camera.view_to_ray(camera_transform, x as f32, y as f32);
+                        let mesh = meshes.get(&new_meshes[0]);
+                        if let Some(intersection) = intersections::ray_with_mesh(
+                            pointer_ray,
+                            &mesh.mesh_data.as_ref().unwrap().positions,
+                            &mesh.mesh_data.as_ref().unwrap().indices,
+                        ) {
+                            let offset = Vec3::new(0 as f32, 0.0, 0 as f32) * (size - 8.0) * scale
+                                - (Vec3::new(tiles as f32, 0.0, tiles as f32)
+                                    * (size - 8.0)
+                                    * scale)
+                                    / 2.0;
+                            let position = pointer_ray.get_point(intersection);
+                            let position = (position - offset) / scale;
+                            let new_position = Vec2::new(position.x, position.z).as_usize();
+                            if let Some(start) = last_clicked_position {
+                                pathfinder.pathfind(
+                                    start,
+                                    new_position,
+                                    Vec2u::fill(resolution),
+                                    &terrain.heights,
+                                    &mut current_path,
+                                );
+
+                                last_clicked_position = None;
+
+                                let path_color = Color::BROWN.with_lightness(0.8).with_chroma(0.3);
+                                for p in current_path.iter() {
+                                    terrain.colors[p.x * resolution + p.y] = path_color;
+                                }
+
+                                update_mesh = true;
+                            } else {
+                                last_clicked_position = Some(new_position);
+                            }
+                        }
+                    })
+                    .run(world);
                 }
                 Event::KappEvent(event) => {
                     match event {
@@ -459,7 +494,30 @@ fn main() {
                         request_window_redraw(world)
                     }
                 }
+
                 Event::Draw => {
+                    ui_manager.prepare(world, &mut standard_context);
+                    ui_manager.layout(&mut ui_state, &mut standard_context, &mut root_widget);
+                    ui_manager.render_ui(world);
+
+                    /*
+                    //  println!("PATH: {:#?}", path_out);
+                    let offset = Vec3::new(0 as f32, 0.0, 0 as f32) * (size - 8.0) * scale
+                        - (Vec3::new(tiles as f32, 0.0, tiles as f32) * (size - 8.0) * scale) / 2.0;
+                    for p in current_path.iter() {
+                        let height = terrain.heights[p.x * resolution + p.y];
+                        let p = Vec3::new(p.x as f32, height / scale, p.y as f32) * scale + offset;
+                        world.spawn((
+                            Mesh::CUBE,
+                            Color::RED,
+                            Transform::new()
+                                .with_position(p)
+                                .with_scale(Vec3::fill(0.1)),
+                            Material::EMISSIVE,
+                            Temporary,
+                        ));
+                    }
+                    */
                     //    println!("DRAWING");
                 }
                 _ => {}
@@ -506,25 +564,24 @@ fn main() {
                 }
 
                 (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
-                    let resolutions = [100, 50, 25];
                     for i in 0..tiles {
                         for j in 0..tiles {
                             let offset =
                                 offset + Vec3::new(i as f32, 0.0, j as f32) * (size - 8.0) * scale;
 
                             let resolution = if i == tiles / 2 && j == tiles / 2 {
-                                512
+                                resolution
                             } else {
                                 64
                             };
-                            let terrain_heights = generate_terrain_data(
+                            terrain = generate_terrain_data(
                                 offset,
                                 size as usize,
                                 scale,
                                 size * scale * 0.2,
                                 y_smoothing,
                                 if i == tiles / 2 && j == tiles / 2 {
-                                    512
+                                    resolution
                                 } else {
                                     64
                                 },
@@ -538,28 +595,9 @@ fn main() {
                                         * (size - 8.0)
                                         * scale)
                                         / 2.0,
-                                &terrain_heights,
+                                &terrain,
                             );
-                            /*
-                            let mesh_data = generate_terrain(
-                                offset,
-                                size as usize,
-                                scale,
-                                size * scale * 0.2,
-                                y_smoothing,
-                                if i == tiles / 2 && j == tiles / 2 {
-                                    512
-                                } else {
-                                    64
-                                },
-                                Vec3::new(i as f32, 0.0, j as f32) * (size - 8.0) * scale
-                                    - (Vec3::new(tiles as f32, 0.0, tiles as f32)
-                                        * (size - 8.0)
-                                        * scale)
-                                        / 2.0,
-                                &brushes,
-                            );
-                            */
+
                             *meshes.get_mut(&new_meshes[i * tiles + j]) =
                                 Mesh::new(graphics, mesh_data);
                         }
@@ -567,6 +605,36 @@ fn main() {
                 })
                 .run(world);
                 regenerate = false;
+                update_mesh = true;
+            }
+
+            if update_mesh {
+                (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
+                    for i in 0..tiles {
+                        for j in 0..tiles {
+                            let resolution = if i == tiles / 2 && j == tiles / 2 {
+                                resolution
+                            } else {
+                                64
+                            };
+                            let mesh_data = generate_terrain_mesh(
+                                scale,
+                                resolution,
+                                Vec3::new(i as f32, 0.0, j as f32) * (size - 8.0) * scale
+                                    - (Vec3::new(tiles as f32, 0.0, tiles as f32)
+                                        * (size - 8.0)
+                                        * scale)
+                                        / 2.0,
+                                &terrain,
+                            );
+
+                            *meshes.get_mut(&new_meshes[i * tiles + j]) =
+                                Mesh::new(graphics, mesh_data);
+                        }
+                    }
+                })
+                .run(world);
+                update_mesh = false;
             }
             false
         }
