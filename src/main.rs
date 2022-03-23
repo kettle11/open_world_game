@@ -37,16 +37,32 @@ where
     sample.value.reduce_sum() / max_value
 }
 
+#[derive(Clone)]
+struct Terrain {
+    terrain_space_offset: Vec3,
+    heights: Vec<f32>,
+    colors: Vec<Vec4>,
+}
+
 impl Terrain {
     fn generate_terrain_data(
         &mut self,
         offset: Vec3,
-        scale: f32,
+        world_units_per_chunk: f32,
         height: f32,
         y_smoothing: f32,
         resolution: usize,
     ) {
+        let snow = Color::WHITE.to_linear_srgb();
+        let rocky_mountain = Color::BLACK.with_lightness(0.7).to_linear_srgb();
+        let grassy_hill = Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb();
+        let sand = Color::new_from_bytes(197, 167, 132, 255).to_linear_srgb();
+        self.terrain_space_offset = offset;
         let mut noise = clatter::Simplex2d::new();
+
+        let world_units_per_tile = world_units_per_chunk / resolution as f32;
+
+        let resolution = resolution + 1;
 
         self.heights.clear();
         self.colors.clear();
@@ -54,12 +70,9 @@ impl Terrain {
         self.heights.reserve(resolution * resolution);
         self.colors.reserve(resolution * resolution);
 
-        let resolution_scale = 512.0 / resolution as f32;
-        let scale = scale * resolution_scale;
-
         for i in 0..resolution {
             for j in 0..resolution {
-                let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
+                let p = Vec3::new(i as f32, 0.0, j as f32) * world_units_per_tile + offset;
 
                 let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 250., p.z / 250.);
 
@@ -74,21 +87,32 @@ impl Terrain {
                 }
 
                 let color = if y > 20.0 {
-                    Color::WHITE
+                    snow
                 } else if y > 15.0 {
-                    Color::BLACK.with_lightness(0.7)
+                    rocky_mountain
                 } else if y > 0.1 {
-                    Color::new_from_bytes(149, 130, 70, 255)
+                    grassy_hill
                 } else {
-                    Color::new_from_bytes(197, 167, 132, 255)
+                    sand
                 };
                 self.colors.push(color);
-                self.heights.push(y / scale)
+                self.heights.push(y / world_units_per_tile)
             }
         }
     }
 
-    fn generate_mesh(&self, resolution: usize, mesh_size: f32, mesh_data: &mut MeshData) {
+    fn generate_mesh(
+        &self,
+        offset: Vec3,
+        resolution: usize,
+        mesh_size: f32,
+        mesh_data: &mut MeshData,
+    ) {
+        let resolution_scale = mesh_size / resolution as f32;
+
+        let resolution = resolution + 1;
+        let offset = offset * mesh_size;
+
         mesh_data.positions.clear();
         mesh_data.colors.clear();
         mesh_data.indices.clear();
@@ -97,17 +121,14 @@ impl Terrain {
         mesh_data.colors.reserve(resolution * resolution);
         mesh_data.indices.reserve(2 * resolution * resolution);
 
-        let resolution_scale = mesh_size / resolution as f32;
         for i in 0..resolution {
             for j in 0..resolution {
                 let y = self.heights[i * resolution + j];
                 let p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
-                mesh_data.positions.push(p);
-
-                let color = self.colors[i * resolution + j];
-                mesh_data.colors.push(color.to_linear_srgb());
+                mesh_data.positions.push(p + offset);
             }
         }
+        mesh_data.colors.append(&mut self.colors.clone());
 
         let size = resolution as u32;
         for i in 0..size - 1 {
@@ -154,12 +175,6 @@ impl Terrain {
     }
 }
 
-struct Terrain {
-    offset: Vec3,
-    heights: Vec<f32>,
-    colors: Vec<Color>,
-}
-
 fn main() {
     App::new().setup_and_run(|world: &mut World| {
         world
@@ -169,7 +184,7 @@ fn main() {
         // The light and shadow caster is spawned as part of this.
         spawn_skybox(world, "assets/qwantani_1k.hdr");
 
-        let mesh_size = 256.0;
+        let mesh_size = 128.0;
 
         // Spawn a camera
         let center = Vec3::new(mesh_size as f32 / 2.0, 0.0, mesh_size as f32 / 2.0);
@@ -214,7 +229,7 @@ fn main() {
             ))
         })
         .run(world);
-        let tiles = 1;
+        const tiles: usize = 2;
         let mut new_meshes: Vec<_> = Vec::new();
         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
             for _ in 0..tiles * tiles {
@@ -257,7 +272,11 @@ fn main() {
                     column((
                         button("New", |ui_state: &mut UIState| ui_state.generate = true),
                         text("Scale:"),
-                        slider(|data: &mut UIState| &mut data.scale, 0.03, 2.0),
+                        slider(
+                            |data: &mut UIState| &mut data.world_units_per_chunk,
+                            15.0,
+                            1024.0,
+                        ),
                         text("Height Scale:"),
                         slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
                         text("Coastal Flattening:"),
@@ -275,7 +294,7 @@ fn main() {
         #[derive(Copy, Clone, PartialEq)]
         struct UIState {
             generate: bool,
-            scale: f32,
+            world_units_per_chunk: f32,
             height: f32,
             y_smoothing: f32,
             resolution: usize,
@@ -283,7 +302,7 @@ fn main() {
 
         let mut ui_state = UIState {
             generate: true,
-            scale: 0.2,
+            world_units_per_chunk: 0.2 * 512.0,
             height: 10.0,
             y_smoothing: 5.0,
             resolution: 512,
@@ -292,11 +311,14 @@ fn main() {
         let mut update_mesh = false;
         let mut regenerate = true;
 
-        let mut terrain = Terrain {
-            heights: Vec::new(),
-            colors: Vec::new(),
-            offset: Vec3::ZERO,
-        };
+        let mut terrain_tiles = vec![
+            Terrain {
+                heights: Vec::new(),
+                colors: Vec::new(),
+                terrain_space_offset: Vec3::ZERO,
+            };
+            tiles * tiles
+        ];
 
         move |event, world| {
             match &event {
@@ -351,27 +373,32 @@ fn main() {
                 Event::Draw => {
                     if regenerate {
                         request_window_redraw(world);
-
-                        terrain.generate_terrain_data(
-                            offset,
-                            ui_state.scale,
-                            ui_state.height,
-                            ui_state.y_smoothing,
-                            ui_state.resolution,
-                        );
-
+                        for i in 0..tiles {
+                            for j in 0..tiles {
+                                let offset = offset
+                                    + ui_state.world_units_per_chunk
+                                        * Vec3::new(i as f32, 0.0, j as f32);
+                                terrain_tiles[i * tiles + j].generate_terrain_data(
+                                    offset,
+                                    ui_state.world_units_per_chunk,
+                                    ui_state.height,
+                                    ui_state.y_smoothing,
+                                    ui_state.resolution,
+                                );
+                            }
+                        }
                         regenerate = false;
                         update_mesh = true;
                     }
 
                     if update_mesh {
-                        // last_clicked_position = None;
                         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
                             for i in 0..tiles {
                                 for j in 0..tiles {
                                     let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
                                     let mesh_data = mesh.mesh_data.as_mut().unwrap();
-                                    terrain.generate_mesh(
+                                    terrain_tiles[i * tiles + j].generate_mesh(
+                                        Vec3::new(i as f32, 0.0, j as f32),
                                         ui_state.resolution,
                                         mesh_size,
                                         mesh_data,
