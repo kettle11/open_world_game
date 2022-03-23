@@ -36,118 +36,126 @@ where
 
     sample.value.reduce_sum() / max_value
 }
-fn generate_terrain_data(
-    offset: Vec3,
-    scale: f32,
-    height: f32,
-    y_smoothing: f32,
-    resolution: usize,
-    //  brushes: &[Brush],
-) -> Terrain {
-    let mut noise = clatter::Simplex2d::new();
 
-    let mut heights = Vec::with_capacity(resolution * resolution);
-    let mut colors = Vec::with_capacity(resolution * resolution);
-    let resolution_scale = 512.0 / resolution as f32;
-    let scale = scale * resolution_scale;
+impl Terrain {
+    fn generate_terrain_data(
+        &mut self,
+        offset: Vec3,
+        scale: f32,
+        height: f32,
+        y_smoothing: f32,
+        resolution: usize,
+    ) {
+        let mut noise = clatter::Simplex2d::new();
 
-    for i in 0..resolution {
-        for j in 0..resolution {
-            let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
+        self.heights.clear();
+        self.colors.clear();
 
-            let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 250., p.z / 250.);
+        self.heights.reserve(resolution * resolution);
+        self.colors.reserve(resolution * resolution);
 
-            let y_tweak = 2.0;
-            let y = y_raw * height * y_tweak;
+        let resolution_scale = 512.0 / resolution as f32;
+        let scale = scale * resolution_scale;
 
-            let t = (y.abs() / y_smoothing).min(1.0);
-            let mut y = y * t * t;
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
 
-            if y.abs() < 0.001 {
-                y += 0.01;
+                let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 250., p.z / 250.);
+
+                let y_tweak = 2.0;
+                let y = y_raw * height * y_tweak;
+
+                let t = (y.abs() / y_smoothing).min(1.0);
+                let mut y = y * t * t;
+
+                if y.abs() < 0.001 {
+                    y += 0.01;
+                }
+
+                let color = if y > 20.0 {
+                    Color::WHITE
+                } else if y > 15.0 {
+                    Color::BLACK.with_lightness(0.7)
+                } else if y > 0.1 {
+                    Color::new_from_bytes(149, 130, 70, 255)
+                } else {
+                    Color::new_from_bytes(197, 167, 132, 255)
+                };
+                self.colors.push(color);
+                self.heights.push(y / scale)
             }
-
-            let color = if y > 20.0 {
-                Color::WHITE
-            } else if y > 15.0 {
-                Color::BLACK.with_lightness(0.7)
-            } else if y > 0.1 {
-                Color::new_from_bytes(149, 130, 70, 255)
-            } else {
-                Color::new_from_bytes(197, 167, 132, 255)
-            };
-            colors.push(color);
-            heights.push(y / scale)
-        }
-    }
-    Terrain { heights, colors }
-}
-
-fn generate_terrain_mesh(resolution: usize, mesh_size: f32, terrain: &Terrain) -> MeshData {
-    let mut positions = Vec::with_capacity(resolution * resolution);
-    let mut colors = Vec::with_capacity(resolution * resolution);
-    let mut indices = Vec::with_capacity(2 * resolution * resolution);
-
-    let resolution_scale = mesh_size / resolution as f32;
-    for i in 0..resolution {
-        for j in 0..resolution {
-            let y = terrain.heights[i * resolution + j];
-            let p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
-            positions.push(p);
-
-            let color = terrain.colors[i * resolution + j];
-            colors.push(color.to_linear_srgb());
         }
     }
 
-    let size = resolution as u32;
-    for i in 0..size - 1 {
-        for j in 0..size - 1 {
-            indices.push([i * size + j, (i + 1) * size + j + 1, (i + 1) * size + j]);
-            indices.push([i * size + j, i * size + j + 1, (i + 1) * size + j + 1]);
-        }
-    }
+    fn generate_mesh(&self, resolution: usize, mesh_size: f32, mesh_data: &mut MeshData) {
+        mesh_data.positions.clear();
+        mesh_data.colors.clear();
+        mesh_data.indices.clear();
 
-    /*
-    let mut add_side = |start: Vec2i, step: Vec2i| {
-        let mut current_p = start;
+        mesh_data.positions.reserve(resolution * resolution);
+        mesh_data.colors.reserve(resolution * resolution);
+        mesh_data.indices.reserve(2 * resolution * resolution);
+
+        let resolution_scale = mesh_size / resolution as f32;
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let y = self.heights[i * resolution + j];
+                let p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
+                mesh_data.positions.push(p);
+
+                let color = self.colors[i * resolution + j];
+                mesh_data.colors.push(color.to_linear_srgb());
+            }
+        }
+
+        let size = resolution as u32;
         for i in 0..size - 1 {
-            let y = terrain.heights[current_p.x as usize * resolution + current_p.y as usize];
-            let base_pos = Vec3::new(current_p.x as f32, 0.0, current_p.y as f32) * scale;
-            let p = (Vec3::new(base_pos.x, y, base_pos.z) + mesh_offset) * resolution_scale;
-
-            let len = positions.len() as u32;
-
-            positions.push(Vec3::new(p.x, -30.0, p.z));
-            positions.push(Vec3::new(p.x, p.y, p.z));
-
-            colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
-            colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
-
-            if i > 0 {
-                indices.push([len, len + 1, len - 1]);
-                indices.push([len, len - 1, len - 2]);
+            for j in 0..size - 1 {
+                mesh_data
+                    .indices
+                    .push([i * size + j, (i + 1) * size + j + 1, (i + 1) * size + j]);
+                mesh_data
+                    .indices
+                    .push([i * size + j, i * size + j + 1, (i + 1) * size + j + 1]);
             }
-            current_p += step;
         }
-    };
-    add_side(Vec2i::X * (resolution - 1) as i32, -Vec2i::X);
-    add_side(Vec2i::Y * (resolution) as i32, Vec2i::X);
-    */
 
-    // add_side(Vec3u::X * resolution, Vec3u::Z);
+        /*
+        let mut add_side = |start: Vec2i, step: Vec2i| {
+            let mut current_p = start;
+            for i in 0..size - 1 {
+                let y = terrain.heights[current_p.x as usize * resolution + current_p.y as usize];
+                let base_pos = Vec3::new(current_p.x as f32, 0.0, current_p.y as f32) * scale;
+                let p = (Vec3::new(base_pos.x, y, base_pos.z) + mesh_offset) * resolution_scale;
 
-    let mut mesh_data = MeshData {
-        positions,
-        colors,
-        indices,
-        ..Default::default()
-    };
-    calculate_normals(&mut mesh_data);
-    mesh_data
+                let len = positions.len() as u32;
+
+                positions.push(Vec3::new(p.x, -30.0, p.z));
+                positions.push(Vec3::new(p.x, p.y, p.z));
+
+                colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
+                colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
+
+                if i > 0 {
+                    indices.push([len, len + 1, len - 1]);
+                    indices.push([len, len - 1, len - 2]);
+                }
+                current_p += step;
+            }
+        };
+        add_side(Vec2i::X * (resolution - 1) as i32, -Vec2i::X);
+        add_side(Vec2i::Y * (resolution) as i32, Vec2i::X);
+        */
+
+        // add_side(Vec3u::X * resolution, Vec3u::Z);
+
+        calculate_normals(mesh_data);
+    }
 }
 
 struct Terrain {
+    offset: Vec3,
     heights: Vec<f32>,
     colors: Vec<Color>,
 }
@@ -222,11 +230,6 @@ fn main() {
         let mut random = Random::new();
         let mut offset = Vec3::new(random.f32(), 0.0, random.f32()) * 100.0;
 
-        let mut terrain = Terrain {
-            heights: Vec::new(),
-            colors: Vec::new(),
-        };
-
         // Setup the UI
         let mut fonts = Fonts::empty();
         fonts.load_default_fonts();
@@ -289,6 +292,12 @@ fn main() {
         let mut update_mesh = false;
         let mut regenerate = true;
 
+        let mut terrain = Terrain {
+            heights: Vec::new(),
+            colors: Vec::new(),
+            offset: Vec3::ZERO,
+        };
+
         move |event, world| {
             match &event {
                 Event::KappEvent(e) => {
@@ -343,7 +352,7 @@ fn main() {
                     if regenerate {
                         request_window_redraw(world);
 
-                        terrain = generate_terrain_data(
+                        terrain.generate_terrain_data(
                             offset,
                             ui_state.scale,
                             ui_state.height,
@@ -360,14 +369,14 @@ fn main() {
                         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
                             for i in 0..tiles {
                                 for j in 0..tiles {
-                                    let mesh_data = generate_terrain_mesh(
+                                    let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
+                                    let mesh_data = mesh.mesh_data.as_mut().unwrap();
+                                    terrain.generate_mesh(
                                         ui_state.resolution,
                                         mesh_size,
-                                        &terrain,
+                                        mesh_data,
                                     );
-
-                                    *meshes.get_mut(&new_meshes[i * tiles + j]) =
-                                        Mesh::new(graphics, mesh_data);
+                                    mesh.update_mesh_on_gpu(graphics);
                                 }
                             }
                         })
