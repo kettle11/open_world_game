@@ -2,51 +2,6 @@
 
 use koi::*;
 
-mod pathfinding;
-
-struct Brush {
-    max_influence: f32,
-    center: Vec2,
-    inner_radius_squared: f32,
-    outer_radius_squared_to_inner_radius: f32,
-    f: Box<dyn Fn(Vec3) -> f32>,
-}
-
-impl Brush {
-    fn new(
-        center: Vec2,
-        inner_radius: f32,
-        outer_radius: f32,
-        max_influence: f32,
-        f: Box<dyn Fn(Vec3) -> f32 + 'static>,
-    ) -> Self {
-        Self {
-            center,
-            inner_radius_squared: inner_radius * inner_radius,
-            outer_radius_squared_to_inner_radius: (outer_radius - inner_radius)
-                * (outer_radius - inner_radius),
-            f,
-            max_influence,
-        }
-    }
-
-    fn apply(&self, p: Vec2, y: f32) -> f32 {
-        //  println!("P: {:?}", p);
-        let dis = (self.center - p).length_squared();
-        //  println!("DIS: {:?}", dis);
-        let effect = if dis < self.inner_radius_squared {
-            1.0
-        } else {
-            1.0 - ((dis - self.inner_radius_squared) / self.outer_radius_squared_to_inner_radius)
-                .clamp(0.0, 1.0)
-        };
-
-        let target_y = (self.f)(Vec3::new(p.x, y, p.y));
-        let effect = smooth_step(effect * self.max_influence);
-        (target_y - y) * effect + y
-    }
-}
-
 fn sample_with_octaves<const LANES: usize>(
     noise: &mut clatter::Simplex2d,
     persistence: f32,
@@ -87,7 +42,7 @@ fn generate_terrain_data(
     height: f32,
     y_smoothing: f32,
     resolution: usize,
-    brushes: &[Brush],
+    //  brushes: &[Brush],
 ) -> Terrain {
     let mut noise = clatter::Simplex2d::new();
 
@@ -100,24 +55,10 @@ fn generate_terrain_data(
         for j in 0..resolution {
             let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
 
-            let y_raw = sample_with_octaves::<32>(&mut noise, 0.5, p.x / 1000., p.z / 1000.);
+            let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 250., p.z / 250.);
 
             let y_tweak = 2.0;
             let y = y_raw * height * y_tweak;
-
-            /*
-            if y_raw > y_smoothing {
-                y += 1.0;
-            }
-
-            if y_raw > y_smoothing * 1.4 {
-                y += 1.0;
-            }
-
-            if y_raw > y_smoothing * 1.8 {
-                y += 1.0;
-            }
-            */
 
             let t = (y.abs() / y_smoothing).min(1.0);
             let mut y = y * t * t;
@@ -126,15 +67,11 @@ fn generate_terrain_data(
                 y += 0.01;
             }
 
-            for brush in brushes.iter() {
-                y = brush.apply(Vec2::new(p.x, p.z), y);
-            }
-
-            let color = if y > 20.0 * y_tweak {
+            let color = if y > 20.0 {
                 Color::WHITE
-            } else if y > 15.0 * y_tweak {
+            } else if y > 15.0 {
                 Color::BLACK.with_lightness(0.7)
-            } else if y > 0.1 * y_tweak {
+            } else if y > 0.1 {
                 Color::new_from_bytes(149, 130, 70, 255)
             } else {
                 Color::new_from_bytes(197, 167, 132, 255)
@@ -155,7 +92,7 @@ fn generate_terrain_mesh(resolution: usize, mesh_size: f32, terrain: &Terrain) -
     for i in 0..resolution {
         for j in 0..resolution {
             let y = terrain.heights[i * resolution + j];
-            let mut p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
+            let p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
             positions.push(p);
 
             let color = terrain.colors[i * resolution + j];
@@ -232,18 +169,17 @@ fn main() {
         camera.set_near_plane(1.0);
         world.spawn((
             Transform::new()
-                .with_position(center + Vec3::Y * 8.0 + Vec3::Z * 10.)
+                .with_position(center + Vec3::Y * 100.0 + Vec3::Z * 100.)
                 .looking_at(center, Vec3::Y),
             CameraControls::new(),
             camera,
         ));
 
-        // Spawn water
+        // Setup the water plane
         let material = (|materials: &mut Assets<Material>| {
             materials.add(new_pbr_material(
                 Shader::PHYSICALLY_BASED_TRANSPARENT_DOUBLE_SIDED,
                 PBRProperties {
-                    // Water is perfectly smooth but most of the time we're viewing it from a distance when it could be considered rough.
                     roughness: 0.02,
                     base_color: Color::new_from_bytes(7, 80, 97, 200),
                     ..Default::default()
@@ -264,7 +200,6 @@ fn main() {
             materials.add(new_pbr_material(
                 Shader::PHYSICALLY_BASED,
                 PBRProperties {
-                    // Water is perfectly smooth but most of the time we're viewing it from a distance when it could be considered rough.
                     roughness: 0.97,
                     ..Default::default()
                 },
@@ -284,53 +219,15 @@ fn main() {
             world.spawn((Transform::new(), new_mesh.clone(), ground_material.clone()));
         }
 
-        // Spawn a series of balls with different material properties.
-        // Up is more metallic
-        // Right is more more rough
-        let spacing = 2.0;
-        let mut commands = Commands::new();
-        (|materials: &mut Assets<Material>| {
-            let rows = 6;
-            let columns = 6;
-            for i in 0..rows {
-                for j in 0..columns {
-                    let new_material = materials.add(new_pbr_material(
-                        Shader::PHYSICALLY_BASED,
-                        PBRProperties {
-                            base_color: Color::AZURE,
-                            metallic: i as f32 / rows as f32,
-                            roughness: (j as f32 / columns as f32).clamp(0.05, 1.0),
-                            ..Default::default()
-                        },
-                    ));
-                    commands.spawn((
-                        Transform::new().with_position(
-                            Vec3::new(j as f32 * spacing, i as f32 * spacing, -2.0) + center,
-                        ),
-                        new_material,
-                        Mesh::SPHERE,
-                    ))
-                }
-            }
-        })
-        .run(world);
-        commands.apply(world);
         let mut random = Random::new();
-
         let mut offset = Vec3::new(random.f32(), 0.0, random.f32()) * 100.0;
 
-        let mut brush_count = 20;
-
-        let mut pathfinder = pathfinding::Pathfinder::new();
         let mut terrain = Terrain {
             heights: Vec::new(),
             colors: Vec::new(),
         };
 
-        let mut current_path = Vec::new();
-
-        let mut last_clicked_position = None;
-
+        // Setup the UI
         let mut fonts = Fonts::empty();
         fonts.load_default_fonts();
 
@@ -357,7 +254,7 @@ fn main() {
                     column((
                         button("New", |ui_state: &mut UIState| ui_state.generate = true),
                         text("Scale:"),
-                        slider(|data: &mut UIState| &mut data.scale, 0.1, 30.0),
+                        slider(|data: &mut UIState| &mut data.scale, 0.03, 2.0),
                         text("Height Scale:"),
                         slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
                         text("Coastal Flattening:"),
@@ -383,16 +280,14 @@ fn main() {
 
         let mut ui_state = UIState {
             generate: true,
-            scale: 1.0,
-            height: 20.0,
+            scale: 0.2,
+            height: 10.0,
             y_smoothing: 5.0,
             resolution: 512,
         };
         let mut last_state = ui_state.clone();
         let mut update_mesh = false;
         let mut regenerate = true;
-        let mut regenerate_brushes = true;
-        let mut brushes = Vec::new();
 
         move |event, world| {
             match &event {
@@ -414,76 +309,11 @@ fn main() {
                 regenerate = true;
             }
             match event {
-                Event::KappEvent(KappEvent::KeyDown { key: Key::P, .. }) => {
-                    pathfinder.pathfind(
-                        Vec2u::fill(0),
-                        Vec2u::fill(ui_state.resolution - 1),
-                        Vec2u::fill(ui_state.resolution),
-                        &terrain.heights,
-                        &mut current_path,
-                    );
-                }
-                Event::KappEvent(KappEvent::KeyDown { key: Key::Up, .. }) => {
-                    // y_smoothing += 0.5;
-                    // y_smoothing = y_smoothing.max(0.0);
-                    brush_count = 20;
-                    regenerate = true;
-                }
-                Event::KappEvent(KappEvent::KeyDown { key: Key::Down, .. }) => {
-                    // y_smoothing -= 0.5;
-                    // y_smoothing = y_smoothing.max(0.0);
-                    brush_count = 0;
-                    regenerate = true;
-                }
                 Event::KappEvent(KappEvent::KeyDown {
                     key: Key::Space, ..
                 }) => {
                     ui_state.generate = true;
-                }
-                Event::KappEvent(KappEvent::PointerDown {
-                    x,
-                    y,
-                    button: PointerButton::Primary,
-                    ..
-                }) => {
-                    (|meshes: &Assets<Mesh>, cameras: Query<(&Transform, &Camera)>| {
-                        let (camera_transform, camera) = cameras.iter().next().unwrap();
-                        let pointer_ray = camera.view_to_ray(camera_transform, x as f32, y as f32);
-                        let mesh = meshes.get(&new_meshes[0]);
-                        if let Some(intersection) = intersections::ray_with_mesh(
-                            pointer_ray,
-                            &mesh.mesh_data.as_ref().unwrap().positions,
-                            &mesh.mesh_data.as_ref().unwrap().indices,
-                        ) {
-                            let position = pointer_ray.get_point(intersection);
-                            let new_position = ((position.xz() / mesh_size)
-                                * ui_state.resolution as f32)
-                                .as_usize();
-
-                            println!("new_position: {:?}", new_position);
-                            if let Some(start) = last_clicked_position {
-                                pathfinder.pathfind(
-                                    start,
-                                    new_position,
-                                    Vec2u::fill(ui_state.resolution),
-                                    &terrain.heights,
-                                    &mut current_path,
-                                );
-
-                                last_clicked_position = None;
-
-                                let path_color = Color::BROWN.with_lightness(0.8).with_chroma(0.3);
-                                for p in current_path.iter() {
-                                    terrain.colors[p.x * ui_state.resolution + p.y] = path_color;
-                                }
-
-                                update_mesh = true;
-                            } else {
-                                last_clicked_position = Some(new_position);
-                            }
-                        }
-                    })
-                    .run(world);
+                    request_window_redraw(world)
                 }
                 Event::KappEvent(event) => {
                     match event {
@@ -513,53 +343,12 @@ fn main() {
                     if regenerate {
                         request_window_redraw(world);
 
-                        if regenerate_brushes {
-                            let mut random = Random::new();
-                            brushes.clear();
-                            let max_size = 500.0 as f32;
-                            for _ in 0..brush_count {
-                                let inner_radius = random.range_f32(0.0..40.);
-
-                                brushes.push(Brush::new(
-                                    Vec2::new(random.f32(), random.f32()) * max_size
-                                        + Vec2::new(offset.x, offset.z),
-                                    inner_radius,
-                                    inner_radius * 3.0,
-                                    random.f32() * 0.3,
-                                    match random.range_u32(0..2) {
-                                        0 => {
-                                            let v = random.range_f32(0.4..5.0);
-                                            Box::new(move |p| p.y * v)
-                                        }
-                                        1 => {
-                                            let v = random.range_f32(-10.0..15.);
-                                            Box::new(move |_| v)
-                                        }
-                                        _ => {
-                                            let random_min = random.range_f32(-3.0..15.0);
-                                            let random_max =
-                                                random.range_f32(0.0..4.0) + random_min;
-                                            Box::new(move |p: Vec3| {
-                                                if p.y > random_min && p.y < random_max {
-                                                    random_max
-                                                } else {
-                                                    p.y
-                                                }
-                                            })
-                                        } // _ => unreachable!(),
-                                    },
-                                ))
-                            }
-                            regenerate_brushes = false;
-                        }
-
                         terrain = generate_terrain_data(
                             offset,
                             ui_state.scale,
                             ui_state.height,
                             ui_state.y_smoothing,
                             ui_state.resolution,
-                            &brushes,
                         );
 
                         regenerate = false;
@@ -567,7 +356,7 @@ fn main() {
                     }
 
                     if update_mesh {
-                        last_clicked_position = None;
+                        // last_clicked_position = None;
                         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
                             for i in 0..tiles {
                                 for j in 0..tiles {
