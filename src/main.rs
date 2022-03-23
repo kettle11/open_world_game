@@ -100,8 +100,10 @@ fn generate_terrain_data(
         for j in 0..resolution {
             let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
 
-            let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 1000., p.z / 1000.);
-            let y = y_raw * height;
+            let y_raw = sample_with_octaves::<32>(&mut noise, 0.5, p.x / 1000., p.z / 1000.);
+
+            let y_tweak = 2.0;
+            let y = y_raw * height * y_tweak;
 
             /*
             if y_raw > y_smoothing {
@@ -128,17 +130,17 @@ fn generate_terrain_data(
                 y = brush.apply(Vec2::new(p.x, p.z), y);
             }
 
-            let color = if y > 20.0 {
+            let color = if y > 20.0 * y_tweak {
                 Color::WHITE
-            } else if y > 15.0 {
+            } else if y > 15.0 * y_tweak {
                 Color::BLACK.with_lightness(0.7)
-            } else if y > 0.1 {
+            } else if y > 0.1 * y_tweak {
                 Color::new_from_bytes(149, 130, 70, 255)
             } else {
                 Color::new_from_bytes(197, 167, 132, 255)
             };
             colors.push(color);
-            heights.push(y)
+            heights.push(y / scale)
         }
     }
     Terrain { heights, colors }
@@ -153,8 +155,7 @@ fn generate_terrain_mesh(resolution: usize, mesh_size: f32, terrain: &Terrain) -
     for i in 0..resolution {
         for j in 0..resolution {
             let y = terrain.heights[i * resolution + j];
-            let mut p = Vec3::new(i as f32, 0.0, j as f32) * resolution_scale;
-            p.y = y;
+            let mut p = Vec3::new(i as f32, y, j as f32) * resolution_scale;
             positions.push(p);
 
             let color = terrain.colors[i * resolution + j];
@@ -223,8 +224,10 @@ fn main() {
         // The light and shadow caster is spawned as part of this.
         spawn_skybox(world, "assets/qwantani_1k.hdr");
 
+        let mesh_size = 256.0;
+
         // Spawn a camera
-        let center = Vec3::new(512.0 as f32 / 2.0, 0.0, 512.0 as f32 / 2.0);
+        let center = Vec3::new(mesh_size as f32 / 2.0, 0.0, mesh_size as f32 / 2.0);
         let mut camera = Camera::new();
         camera.set_near_plane(1.0);
         world.spawn((
@@ -358,7 +361,7 @@ fn main() {
                         text("Height Scale:"),
                         slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
                         text("Coastal Flattening:"),
-                        slider(|data: &mut UIState| &mut data.y_smoothing, 0.1, 70.0),
+                        slider(|data: &mut UIState| &mut data.y_smoothing, 0.1, 50.0),
                         text("Terrain Detail:"),
                         slider(|data: &mut UIState| &mut data.resolution, 52, 1024),
                     )),
@@ -379,7 +382,7 @@ fn main() {
         }
 
         let mut ui_state = UIState {
-            generate: false,
+            generate: true,
             scale: 1.0,
             height: 20.0,
             y_smoothing: 5.0,
@@ -391,7 +394,6 @@ fn main() {
         let mut regenerate_brushes = true;
         let mut brushes = Vec::new();
 
-        let mesh_size = 256.0;
         move |event, world| {
             match &event {
                 Event::KappEvent(e) => {
@@ -453,7 +455,6 @@ fn main() {
                             &mesh.mesh_data.as_ref().unwrap().positions,
                             &mesh.mesh_data.as_ref().unwrap().indices,
                         ) {
-                            let offset = Vec3::ZERO;
                             let position = pointer_ray.get_point(intersection);
                             let new_position = ((position.xz() / mesh_size)
                                 * ui_state.resolution as f32)
