@@ -101,8 +101,7 @@ fn generate_terrain_data(
             let p = Vec3::new(i as f32, 0.0, j as f32) * scale + offset;
 
             let y_raw = sample_with_octaves::<16>(&mut noise, 0.5, p.x / 1000., p.z / 1000.);
-            let y_raw = y_raw * height;
-            let y = y_raw;
+            let y = y_raw * height;
 
             /*
             if y_raw > y_smoothing {
@@ -354,11 +353,13 @@ fn main() {
                     300.,
                     column((
                         button("New", |ui_state: &mut UIState| ui_state.generate = true),
+                        text("Scale:"),
+                        slider(|data: &mut UIState| &mut data.scale, 0.1, 30.0),
                         text("Height Scale:"),
                         slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
                         text("Coastal Flattening:"),
                         slider(|data: &mut UIState| &mut data.y_smoothing, 0.1, 70.0),
-                        text("Resolution (WARNING: High values are computationally intense!):"),
+                        text("Terrain Detail:"),
                         slider(|data: &mut UIState| &mut data.resolution, 52, 1024),
                     )),
                 ))),
