@@ -39,12 +39,24 @@ where
 
 #[derive(Clone)]
 struct Terrain {
-    terrain_space_offset: Vec3,
+    resolution: usize,
+    generation: usize,
     heights: Vec<f32>,
     colors: Vec<Vec4>,
+    tile_space_position: Vec2u,
 }
 
 impl Terrain {
+    fn new() -> Self {
+        Self {
+            generation: 0,
+            resolution: 0,
+            tile_space_position: Vec2u::ZERO,
+            heights: Vec::new(),
+            colors: Vec::new(),
+        }
+    }
+
     fn generate_terrain_data(
         &mut self,
         offset: Vec3,
@@ -57,7 +69,6 @@ impl Terrain {
         let rocky_mountain = Color::BLACK.with_lightness(0.7).to_linear_srgb();
         let grassy_hill = Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb();
         let sand = Color::new_from_bytes(197, 167, 132, 255).to_linear_srgb();
-        self.terrain_space_offset = offset;
         let mut noise = clatter::Simplex2d::new();
 
         let world_units_per_tile = world_units_per_chunk / resolution as f32;
@@ -82,8 +93,8 @@ impl Terrain {
                 let t = (y.abs() / y_smoothing).min(1.0);
                 let mut y = y * t * t;
 
-                if y.abs() < 0.001 {
-                    y += 0.01;
+                if y.abs() < 0.01 {
+                    y += 0.02;
                 }
 
                 let color = if y > 20.0 {
@@ -95,8 +106,15 @@ impl Terrain {
                 } else {
                     sand
                 };
+
+                let mut y = y / world_units_per_tile;
+
+                if y.abs() < 0.01 {
+                    y += 0.02;
+                }
+
                 self.colors.push(color);
-                self.heights.push(y / world_units_per_tile)
+                self.heights.push(y)
             }
         }
     }
@@ -107,6 +125,7 @@ impl Terrain {
         resolution: usize,
         mesh_size: f32,
         mesh_data: &mut MeshData,
+        mesh_normal_calculator: &mut MeshNormalCalculator,
     ) {
         let resolution_scale = mesh_size / resolution as f32;
 
@@ -128,7 +147,7 @@ impl Terrain {
                 mesh_data.positions.push(p + offset);
             }
         }
-        mesh_data.colors.append(&mut self.colors.clone());
+        mesh_data.colors.extend_from_slice(&self.colors);
 
         let size = resolution as u32;
         for i in 0..size - 1 {
@@ -142,41 +161,14 @@ impl Terrain {
             }
         }
 
-        /*
-        let mut add_side = |start: Vec2i, step: Vec2i| {
-            let mut current_p = start;
-            for i in 0..size - 1 {
-                let y = terrain.heights[current_p.x as usize * resolution + current_p.y as usize];
-                let base_pos = Vec3::new(current_p.x as f32, 0.0, current_p.y as f32) * scale;
-                let p = (Vec3::new(base_pos.x, y, base_pos.z) + mesh_offset) * resolution_scale;
-
-                let len = positions.len() as u32;
-
-                positions.push(Vec3::new(p.x, -30.0, p.z));
-                positions.push(Vec3::new(p.x, p.y, p.z));
-
-                colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
-                colors.push(Color::new_from_bytes(149, 130, 70, 255).to_linear_srgb());
-
-                if i > 0 {
-                    indices.push([len, len + 1, len - 1]);
-                    indices.push([len, len - 1, len - 2]);
-                }
-                current_p += step;
-            }
-        };
-        add_side(Vec2i::X * (resolution - 1) as i32, -Vec2i::X);
-        add_side(Vec2i::Y * (resolution) as i32, Vec2i::X);
-        */
-
-        // add_side(Vec3u::X * resolution, Vec3u::Z);
-
-        calculate_normals(mesh_data);
+        mesh_normal_calculator.calculate_normals(mesh_data);
     }
 }
 
 fn main() {
     App::new().setup_and_run(|world: &mut World| {
+        let tiles: usize = 8;
+
         world
             .get_singleton::<Graphics>()
             .set_automatic_redraw(false);
@@ -184,22 +176,25 @@ fn main() {
         // The light and shadow caster is spawned as part of this.
         spawn_skybox(world, "assets/qwantani_1k.hdr");
 
-        let mesh_size = 128.0;
+        let mesh_size = 1024.0 / tiles as f32;
 
         // Spawn a camera
-        let center = Vec3::new(mesh_size as f32 / 2.0, 0.0, mesh_size as f32 / 2.0);
+        let center = Vec3::new(mesh_size as f32 / 2.0, 0.0, mesh_size as f32 / 2.0) * tiles as f32;
         let mut camera = Camera::new();
         camera.set_near_plane(1.0);
+
+        let mut camera_controls = CameraControls::new();
+        camera_controls.max_speed *= 10.0;
         world.spawn((
             Transform::new()
                 .with_position(center + Vec3::Y * 100.0 + Vec3::Z * 100.)
                 .looking_at(center, Vec3::Y),
-            CameraControls::new(),
             camera,
+            camera_controls,
         ));
 
         // Setup the water plane
-        let material = (|materials: &mut Assets<Material>| {
+        let water_material = (|materials: &mut Assets<Material>| {
             materials.add(new_pbr_material(
                 Shader::PHYSICALLY_BASED_TRANSPARENT_DOUBLE_SIDED,
                 PBRProperties {
@@ -210,14 +205,21 @@ fn main() {
             ))
         })
         .run(world);
-        world.spawn((
-            Transform::new()
-                .with_position(center)
-                .with_scale(Vec3::fill(512.0)),
-            Mesh::PLANE,
-            material,
-            RenderFlags::DEFAULT.with_layer(RenderFlags::DO_NOT_CAST_SHADOWS),
-        ));
+
+        // Spawn water planes
+        for i in 0..tiles {
+            for j in 0..tiles {
+                let offset = Vec3::new(i as f32, 0.0, j as f32) * mesh_size;
+                world.spawn((
+                    Transform::new()
+                        .with_position(offset + Vec3::XZ * (mesh_size / 2.0))
+                        .with_scale(Vec3::fill(mesh_size)),
+                    Mesh::PLANE,
+                    water_material.clone(),
+                    RenderFlags::DEFAULT.with_layer(RenderFlags::DO_NOT_CAST_SHADOWS),
+                ));
+            }
+        }
 
         let ground_material = (|materials: &mut Assets<Material>| {
             materials.add(new_pbr_material(
@@ -229,7 +231,6 @@ fn main() {
             ))
         })
         .run(world);
-        const tiles: usize = 2;
         let mut new_meshes: Vec<_> = Vec::new();
         (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
             for _ in 0..tiles * tiles {
@@ -251,42 +252,64 @@ fn main() {
 
         let mut standard_context = StandardContext::new(
             StandardStyle {
-                primary_text_color: Color::WHITE,
-                padding: 20.,
+                primary_text_color: Color::WHITE.with_lightness(0.4),
+                padding: 12.,
                 ..Default::default()
             },
             StandardInput::default(),
             fonts,
         );
 
-        let mut root_widget = align(
-            Alignment::End,
-            Alignment::Start,
-            padding(stack((
-                rounded_fill(
-                    |_, _, _: &StandardContext<_>| Color::BLACK.with_alpha(0.5),
-                    |_, c| c.standard_style().rounding,
-                ),
-                padding(fit(width(
-                    300.,
-                    column((
-                        button("New", |ui_state: &mut UIState| ui_state.generate = true),
-                        text("Scale:"),
-                        slider(
-                            |data: &mut UIState| &mut data.world_units_per_chunk,
-                            15.0,
-                            1024.0,
+        let mut root_widget = padding(column((
+            align(
+                Alignment::End,
+                Alignment::Start,
+                row((
+                    button("Random Location", |ui_state: &mut UIState| {
+                        ui_state.generate = true
+                    }),
+                    toggle_button(
+                        text("Settings"),
+                        |ui_state: &mut UIState| &mut ui_state.settings_open,
+                        |ui_state: &mut UIState| !ui_state.settings_open,
+                    ),
+                )),
+            ),
+            conditional(
+                |state, _| state.settings_open,
+                align(
+                    Alignment::End,
+                    Alignment::Start,
+                    stack((
+                        rounded_fill(
+                            |_, _, _: &StandardContext<_>| Color::BLACK.with_alpha(0.5),
+                            |_, c| c.standard_style().rounding,
                         ),
-                        text("Height Scale:"),
-                        slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
-                        text("Coastal Flattening:"),
-                        slider(|data: &mut UIState| &mut data.y_smoothing, 0.1, 50.0),
-                        text("Terrain Detail:"),
-                        slider(|data: &mut UIState| &mut data.resolution, 52, 1024),
+                        padding(fit(width(
+                            350.,
+                            column((
+                                text("Scale:").with_color(|_, _, _| Color::WHITE),
+                                slider(
+                                    |data: &mut UIState| &mut data.world_units_per_chunk,
+                                    15.0 / tiles as f32,
+                                    1024.0 / tiles as f32,
+                                ),
+                                text("Height Scale:").with_color(|_, _, _| Color::WHITE),
+                                slider(|data: &mut UIState| &mut data.height, 1.0, 70.0),
+                                text("Coastal Flattening:").with_color(|_, _, _| Color::WHITE),
+                                slider(|data: &mut UIState| &mut data.y_smoothing, 0.1, 50.0),
+                                text("Terrain Detail:").with_color(|_, _, _| Color::WHITE),
+                                slider(
+                                    |data: &mut UIState| &mut data.resolution,
+                                    128 / tiles,
+                                    2048 / tiles,
+                                ),
+                            )),
+                        ))),
                     )),
-                ))),
-            ))),
-        );
+                ),
+            ),
+        )));
 
         let mut ui_manager = UIManager::new(world);
         world.spawn((Transform::new(), Camera::new_for_user_interface()));
@@ -298,40 +321,47 @@ fn main() {
             height: f32,
             y_smoothing: f32,
             resolution: usize,
+            settings_open: bool,
         }
 
         let mut ui_state = UIState {
-            generate: true,
-            world_units_per_chunk: 0.2 * 512.0,
+            generate: false,
+            world_units_per_chunk: 0.2 * 1024.0 / tiles as f32,
             height: 10.0,
             y_smoothing: 5.0,
-            resolution: 512,
+            resolution: 512 / tiles,
+            settings_open: true,
         };
         let mut last_state = ui_state.clone();
-        let mut update_mesh = false;
         let mut regenerate = true;
 
-        let mut terrain_tiles = vec![
-            Terrain {
-                heights: Vec::new(),
-                colors: Vec::new(),
-                terrain_space_offset: Vec3::ZERO,
-            };
-            tiles * tiles
-        ];
+        let mut terrain_pool = Vec::new();
 
+        let mut generation: usize = 0;
+
+        let mut outstanding_events = 0;
+
+        let mut mesh_normal_calculator = MeshNormalCalculator::new();
+
+        let (complete_chunks_sender, complete_chunks_receiver) = std::sync::mpsc::channel();
         move |event, world| {
             match &event {
                 Event::KappEvent(e) => {
                     if ui_manager.handle_event(e, &mut ui_state, &mut standard_context) {
+                        if ui_state != last_state {
+                            regenerate = true;
+                            last_state = ui_state;
+                            request_window_redraw(world);
+                        }
                         return true;
-                    }
-                    if ui_state != last_state {
-                        regenerate = true;
-                        last_state = ui_state;
                     }
                 }
                 _ => {}
+            }
+            if ui_state != last_state {
+                regenerate = true;
+                last_state = ui_state;
+                request_window_redraw(world);
             }
 
             if ui_state.generate {
@@ -372,48 +402,72 @@ fn main() {
 
                 Event::Draw => {
                     if regenerate {
-                        request_window_redraw(world);
+                        generation = generation.overflowing_add(1).0;
+                        regenerate = false;
                         for i in 0..tiles {
                             for j in 0..tiles {
                                 let offset = offset
                                     + ui_state.world_units_per_chunk
                                         * Vec3::new(i as f32, 0.0, j as f32);
-                                terrain_tiles[i * tiles + j].generate_terrain_data(
-                                    offset,
-                                    ui_state.world_units_per_chunk,
-                                    ui_state.height,
-                                    ui_state.y_smoothing,
-                                    ui_state.resolution,
-                                );
+
+                                let world_units_per_chunk = ui_state.world_units_per_chunk;
+                                let height = ui_state.height;
+                                let y_smoothing = ui_state.y_smoothing;
+                                let resolution = ui_state.resolution;
+
+                                let mut terrain =
+                                    terrain_pool.pop().unwrap_or_else(|| Terrain::new());
+
+                                terrain.tile_space_position = Vec2u::new(i, j);
+
+                                terrain.generation = generation;
+                                terrain.resolution = resolution;
+                                let complete_chunks_sender = complete_chunks_sender.clone();
+                                ktasks::spawn(async move {
+                                    terrain.generate_terrain_data(
+                                        offset,
+                                        world_units_per_chunk,
+                                        height,
+                                        y_smoothing,
+                                        resolution,
+                                    );
+                                    let _ = complete_chunks_sender.send(terrain);
+                                })
+                                .run();
+                                outstanding_events += 1;
                             }
                         }
-                        regenerate = false;
-                        update_mesh = true;
                     }
 
-                    if update_mesh {
-                        (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
-                            for i in 0..tiles {
-                                for j in 0..tiles {
-                                    let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
-                                    let mesh_data = mesh.mesh_data.as_mut().unwrap();
-                                    terrain_tiles[i * tiles + j].generate_mesh(
-                                        Vec3::new(i as f32, 0.0, j as f32),
-                                        ui_state.resolution,
-                                        mesh_size,
-                                        mesh_data,
-                                    );
-                                    mesh.update_mesh_on_gpu(graphics);
-                                }
+                    (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
+                        // Only load one chunk a frame to prevent stutter.
+                        while let Ok(generated_terrain) = complete_chunks_receiver.try_recv() {
+                            if generated_terrain.generation == generation {
+                                let (i, j) = generated_terrain.tile_space_position.into();
+                                let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
+                                let mesh_data = mesh.mesh_data.as_mut().unwrap();
+                                generated_terrain.generate_mesh(
+                                    Vec3::new(i as f32, 0.0, j as f32),
+                                    generated_terrain.resolution,
+                                    mesh_size,
+                                    mesh_data,
+                                    &mut mesh_normal_calculator,
+                                );
+                                mesh.update_mesh_on_gpu(graphics);
                             }
-                        })
-                        .run(world);
-                        update_mesh = false;
-                    }
+                            terrain_pool.push(generated_terrain);
+                            outstanding_events -= 1;
+                        }
+                    })
+                    .run(world);
 
                     ui_manager.prepare(world, &mut standard_context);
                     ui_manager.layout(&mut ui_state, &mut standard_context, &mut root_widget);
                     ui_manager.render_ui(world);
+
+                    if outstanding_events > 0 {
+                        request_window_redraw(world);
+                    }
                 }
                 _ => {}
             }
@@ -423,24 +477,42 @@ fn main() {
     });
 }
 
-pub fn calculate_normals(mesh_data: &mut MeshData) {
-    let mut normal_use_count = vec![0; mesh_data.positions.len()];
-    let mut normals = vec![Vec3::ZERO; mesh_data.positions.len()];
-    for [p0, p1, p2] in mesh_data.indices.iter().cloned() {
-        let dir0 = mesh_data.positions[p1 as usize] - mesh_data.positions[p0 as usize];
-        let dir1 = mesh_data.positions[p2 as usize] - mesh_data.positions[p1 as usize];
-        let normal = dir0.cross(dir1).normalized();
-        normal_use_count[p0 as usize] += 1;
-        normal_use_count[p1 as usize] += 1;
-        normal_use_count[p2 as usize] += 1;
-        normals[p0 as usize] += normal;
-        normals[p1 as usize] += normal;
-        normals[p2 as usize] += normal;
-    }
+struct MeshNormalCalculator {
+    normal_use_count: Vec<i32>,
+}
 
-    for (normal, &normal_use_count) in normals.iter_mut().zip(normal_use_count.iter()) {
-        *normal = *normal / normal_use_count as f32;
+impl MeshNormalCalculator {
+    pub fn new() -> Self {
+        Self {
+            normal_use_count: Vec::new(),
+        }
     }
+    pub fn calculate_normals(&mut self, mesh_data: &mut MeshData) {
+        self.normal_use_count.clear();
+        self.normal_use_count.resize(mesh_data.positions.len(), 0);
 
-    mesh_data.normals = normals;
+        mesh_data.normals.clear();
+        mesh_data
+            .normals
+            .resize(mesh_data.positions.len(), Vec3::ZERO);
+        for [p0, p1, p2] in mesh_data.indices.iter().cloned() {
+            let dir0 = mesh_data.positions[p1 as usize] - mesh_data.positions[p0 as usize];
+            let dir1 = mesh_data.positions[p2 as usize] - mesh_data.positions[p1 as usize];
+            let normal = dir0.cross(dir1).normalized();
+            self.normal_use_count[p0 as usize] += 1;
+            self.normal_use_count[p1 as usize] += 1;
+            self.normal_use_count[p2 as usize] += 1;
+            mesh_data.normals[p0 as usize] += normal;
+            mesh_data.normals[p1 as usize] += normal;
+            mesh_data.normals[p2 as usize] += normal;
+        }
+
+        for (normal, &normal_use_count) in mesh_data
+            .normals
+            .iter_mut()
+            .zip(self.normal_use_count.iter())
+        {
+            *normal = *normal / normal_use_count as f32;
+        }
+    }
 }
