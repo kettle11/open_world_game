@@ -413,6 +413,7 @@ fn main() {
                             || ui_state.y_smoothing != last_state.y_smoothing
                             || ui_state.resolution != last_state.resolution
                             || ui_state.world_units_per_chunk != last_state.world_units_per_chunk
+                            || ui_state.generate
                         {
                             regenerate = true;
                             request_window_redraw(world);
