@@ -16,6 +16,9 @@ function kwasm_stuff() {
     }
 
     self.kwasm_new_js_object = function (item) {
+        if (item == null || item == undefined) {
+            return 0;
+        }
         let index = kwasm_js_objects_free_indices.pop();
         if (!index) {
             return kwasm_js_objects.push(item) - 1;
@@ -34,7 +37,6 @@ function kwasm_stuff() {
         const client_string = new Uint8Array(self.kwasm_memory.buffer, pointer, length);
         client_string.set(string_data);
     };
-
     self.kwasm_free_js_object = function (index) {
         if (index > 1) {
             kwasm_js_objects[index] = null;
@@ -58,12 +60,7 @@ function kwasm_stuff() {
             const args = new Uint32Array(self.kwasm_memory.buffer, arg_data_ptr, args_length);
             let f = kwasm_js_objects[function_object];
             let result = f.apply(self, args);
-            if (result == undefined) {
-                return 0;
-            } else {
-                return self.kwasm_new_js_object(result);
-            }
-            result
+            return self.kwasm_new_js_object(result);
         },
         kwasm_call_js_with_args: function (function_object, arg_data_ptr, args_length) {
             const args = new Uint32Array(self.kwasm_memory.buffer, arg_data_ptr, args_length);
@@ -73,11 +70,9 @@ function kwasm_stuff() {
             let args0 = Array.from(args);
             let args1 = args0.map(a => kwasm_js_objects[a]);
             let result = f.apply(self, args1);
-            if (result == undefined) {
-                return 0;
-            } else {
-                return self.kwasm_new_js_object(result);
-            }
+
+            return self.kwasm_new_js_object(result);
+
         },
         kwasm_js_object_property: function (object_index, property_name_index) {
             let object = kwasm_js_objects[object_index];
@@ -102,7 +97,7 @@ function kwasm_stuff() {
             let worker = new Worker(kwasm_stuff_blob);
 
             // This does nothing, but without it Firefox / Safari seem to do some sort of 
-            // fault optimization that incorrectly sets up or kills the worker early.
+            // faulty optimization that incorrectly sets up or kills the worker early.
             kwasm_workers.push(worker);
 
             worker.postMessage({
@@ -147,52 +142,56 @@ function kwasm_stuff() {
     // Load and setup the WebAssembly library.
     // This is called when using `kwasm` without wasm-bindgen.
     function initialize(wasm_library_path) {
+        if (self.kwasm_module) {
+            console.log("Old kwasm module is still around after refresh");
+            self.kwasm_module = null;
+        }
         let imports = {
             env: {}
         };
 
         imports.env = Object.assign(imports.env, kwasm_import_functions);
 
-        fetch(wasm_library_path).then(response =>
-            response.arrayBuffer()
-        ).then(bytes => {
-            // 5 is arbitrary here
-            let shared_memory_supported = typeof SharedArrayBuffer !== 'undefined';
-            console.log("Shared memory supported: " + shared_memory_supported);
+        self.kwasm_starting_memory = 100;//(bytes.byteLength / 65536) + 5;
+        self.kwasm_memory = new WebAssembly.Memory({ initial: kwasm_starting_memory });
+        imports.env.memory = self.kwasm_memory;
 
-            // Start with a large amount of memory to avoid issues in Safari / Firefox with grow.
-            // It seems grow fails if called from another thread, so this solution isn't exceptionally robust.
-            // 5 is arbitrary here
-            let starting_mem = Math.max(12800, (bytes.byteLength / 65536) + 5);
+        WebAssembly.instantiateStreaming(fetch(wasm_library_path), imports)
+            .catch(error => {
+                console.log("Could not initialize with regular Wasm memory. Trying with shared memory");
 
-            if (shared_memory_supported) {
-                self.kwasm_memory = new WebAssembly.Memory({ initial: starting_mem, maximum: 16384 * 4, shared: true });
-            } else {
-                self.kwasm_memory = new WebAssembly.Memory({ initial: starting_mem, maximum: 16384 * 4 });
-            }
-            imports.env.memory = self.kwasm_memory;
-            return WebAssembly.instantiate(bytes, imports)
-        }).then(results => {
-            // If this module exports memory use that instead.
-            if (results.instance.exports.memory) {
-                self.kwasm_memory = results.instance.exports.memory;
-            }
-            self.kwasm_exports = results.instance.exports;
-            self.kwasm_module = results.module;
+                let shared_memory_supported = typeof SharedArrayBuffer !== 'undefined';
+                console.log("Shared memory supported: " + shared_memory_supported);
+                self.kwasm_shared_memory_supported = shared_memory_supported;
 
-            // Setup thread-local storage for the main thread
-            if (kwasm_exports.kwasm_alloc_thread_local_storage) {
-                const thread_local_storage = kwasm_exports.kwasm_alloc_thread_local_storage();
-                self.kwasm_exports.__wasm_init_tls(thread_local_storage);
-            }
+                self.kwasm_memory = new WebAssembly.Memory({ initial: self.kwasm_starting_memory, maximum: 16384 * 4, shared: true });
+                imports.env.memory = self.kwasm_memory;
+                return WebAssembly.instantiateStreaming(fetch(wasm_library_path), imports)
+            }).then(results => {
+                // If this module exports memory use that instead.
+                if (results.instance.exports.memory) {
+                    self.kwasm_memory = results.instance.exports.memory;
+                }
+                self.kwasm_exports = results.instance.exports;
+                self.kwasm_module = results.module;
 
-            // Call our start function.
-            results.instance.exports.main();
-        });
+                // Setup thread-local storage for the main thread
+                if (self.kwasm_shared_memory_supported) {
+                    const thread_local_storage = kwasm_exports.kwasm_alloc_thread_local_storage();
+                    self.kwasm_exports.__wasm_init_tls(thread_local_storage);
+                }
+
+                // Call our start function.
+                results.instance.exports.main();
+            });
     }
 
     // If we're a worker thread we'll use this to setup.
     onmessage = function (e) {
+        if (!e.data.kwasm_module) {
+            console.log("Ignoring invalid setup message sent to worker: ", e);
+            return;
+        }
         self.kwasm_is_worker = true;
         self.kwasm_base_uri = e.data.kwasm_base_uri;
         let imports = {

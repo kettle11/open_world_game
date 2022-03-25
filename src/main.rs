@@ -388,7 +388,7 @@ fn main() {
             y_smoothing: 5.0,
             resolution: 512 / tiles,
             settings_open: true,
-            about_open: false,
+            about_open: true,
         };
         let mut last_state = ui_state.clone();
         let mut regenerate = true;
@@ -401,7 +401,10 @@ fn main() {
 
         let mut mesh_normal_calculator = MeshNormalCalculator::new();
 
+        let mut first_generation = true;
         let (complete_chunks_sender, complete_chunks_receiver) = std::sync::mpsc::channel();
+        request_window_redraw(world);
+
         move |event, world| {
             match &event {
                 Event::KappEvent(e) => {
@@ -476,6 +479,10 @@ fn main() {
                 }
 
                 Event::Draw => {
+                    if outstanding_events > 0 || first_generation {
+                        request_window_redraw(world);
+                    }
+
                     if regenerate && outstanding_events == 0 {
                         generation = generation.overflowing_add(1).0;
                         regenerate = false;
@@ -515,7 +522,6 @@ fn main() {
                     }
 
                     (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
-                        let mut count = 0;
                         while let Ok(generated_terrain) = complete_chunks_receiver.try_recv() {
                             // if generated_terrain.generation == generation {
                             let (i, j) = generated_terrain.tile_space_position.into();
@@ -532,10 +538,8 @@ fn main() {
                             //  }
                             terrain_pool.push(generated_terrain);
                             outstanding_events -= 1;
-                            if count == 2 {
-                                break;
-                            }
-                            count += 1;
+
+                            first_generation = false;
                         }
                     })
                     .run(world);
@@ -543,10 +547,6 @@ fn main() {
                     ui_manager.prepare(world, &mut standard_context);
                     ui_manager.layout(&mut ui_state, &mut standard_context, &mut root_widget);
                     ui_manager.render_ui(world);
-
-                    if outstanding_events > 0 {
-                        request_window_redraw(world);
-                    }
                 }
                 _ => {}
             }
