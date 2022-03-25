@@ -1,3 +1,5 @@
+//! This code is messy and underdocumented. Venture forth at your own risk!
+//!
 #![feature(portable_simd)]
 
 use koi::*;
@@ -167,7 +169,7 @@ impl Terrain {
 
 fn main() {
     App::new().setup_and_run(|world: &mut World| {
-        let tiles: usize = 8;
+        let tiles: usize = 3;
 
         world
             .get_singleton::<Graphics>()
@@ -187,7 +189,7 @@ fn main() {
         camera_controls.max_speed *= 10.0;
         world.spawn((
             Transform::new()
-                .with_position(center + Vec3::Y * 100.0 + Vec3::Z * 100.)
+                .with_position(center + Vec3::Y * 400.0 + Vec3::Z * 400.)
                 .looking_at(center, Vec3::Y),
             camera,
             camera_controls,
@@ -252,7 +254,8 @@ fn main() {
 
         let mut standard_context = StandardContext::new(
             StandardStyle {
-                primary_text_color: Color::WHITE.with_lightness(0.4),
+                primary_text_color: Color::WHITE,
+                primary_color: Color::BLACK.with_alpha(0.5),
                 padding: 12.,
                 ..Default::default()
             },
@@ -273,6 +276,11 @@ fn main() {
                         |ui_state: &mut UIState| &mut ui_state.settings_open,
                         |ui_state: &mut UIState| !ui_state.settings_open,
                     ),
+                    toggle_button(
+                        text("About"),
+                        |ui_state: &mut UIState| &mut ui_state.about_open,
+                        |ui_state: &mut UIState| !ui_state.about_open,
+                    ),
                 )),
             ),
             conditional(
@@ -288,7 +296,7 @@ fn main() {
                         padding(fit(width(
                             350.,
                             column((
-                                text("Scale:").with_color(|_, _, _| Color::WHITE),
+                                text("Zoom:").with_color(|_, _, _| Color::WHITE),
                                 slider(
                                     |data: &mut UIState| &mut data.world_units_per_chunk,
                                     15.0 / tiles as f32,
@@ -309,6 +317,54 @@ fn main() {
                     )),
                 ),
             ),
+            conditional(
+                |state: &mut UIState, _| state.about_open,
+                align(
+                    Alignment::End,
+                    Alignment::Start,
+                    stack((
+                        rounded_fill(
+                            |_, _, _: &StandardContext<_>| Color::BLACK.with_alpha(0.5),
+                            |_, c| c.standard_style().rounding,
+                        ),
+                        padding(fit(width(
+                            350.,
+                            column((
+                                row_unspaced((
+                                    text("Built by  "),
+                                    link(|_| "https://twitter.com/kettlecorn", text("@kettlecorn")),
+                                    text(" with Rust and: "),
+                                )),
+                                row_unspaced((
+                                    text("•  "),
+                                    link(|_| "https://github.com/kettle11/koi", text("koi")),
+                                    text(" for visuals, UI, and controls"),
+                                )),
+                                row_unspaced((
+                                    text("•  "),
+                                    link(|_| "https://github.com/Ralith/clatter", text("clatter")),
+                                    text(" for SIMD-accelerated simplex noise"),
+                                )),
+                                row_unspaced((
+                                    text("•  "),
+                                    link(
+                                        |_| "https://github.com/mooman219/fontdue",
+                                        text("fontdue"),
+                                    ),
+                                    text(" for text-rendering"),
+                                )),
+                                row_unspaced((
+                                    text("Check out the source on  "),
+                                    link(
+                                        |_| "https://github.com/kettle11/open_world_game",
+                                        text("GitHub"),
+                                    ),
+                                )),
+                            )),
+                        ))),
+                    )),
+                ),
+            ),
         )));
 
         let mut ui_manager = UIManager::new(world);
@@ -322,6 +378,7 @@ fn main() {
             y_smoothing: f32,
             resolution: usize,
             settings_open: bool,
+            about_open: bool,
         }
 
         let mut ui_state = UIState {
@@ -331,6 +388,7 @@ fn main() {
             y_smoothing: 5.0,
             resolution: 512 / tiles,
             settings_open: true,
+            about_open: false,
         };
         let mut last_state = ui_state.clone();
         let mut regenerate = true;
@@ -348,21 +406,38 @@ fn main() {
             match &event {
                 Event::KappEvent(e) => {
                     if ui_manager.handle_event(e, &mut ui_state, &mut standard_context) {
-                        if ui_state != last_state {
+                        if ui_state.height != last_state.height
+                            || ui_state.y_smoothing != last_state.y_smoothing
+                            || ui_state.resolution != last_state.resolution
+                            || ui_state.world_units_per_chunk != last_state.world_units_per_chunk
+                        {
                             regenerate = true;
-                            last_state = ui_state;
                             request_window_redraw(world);
                         }
+
+                        if ui_state.settings_open && !last_state.settings_open {
+                            ui_state.about_open = false;
+                        }
+                        if ui_state.about_open && !last_state.about_open {
+                            ui_state.settings_open = false;
+                        }
+                        last_state = ui_state;
+
                         return true;
                     }
                 }
                 _ => {}
             }
-            if ui_state != last_state {
+
+            if ui_state.height != last_state.height
+                || ui_state.y_smoothing != last_state.y_smoothing
+                || ui_state.resolution != last_state.resolution
+                || ui_state.world_units_per_chunk != last_state.world_units_per_chunk
+            {
                 regenerate = true;
-                last_state = ui_state;
                 request_window_redraw(world);
             }
+            last_state = ui_state;
 
             if ui_state.generate {
                 ui_state.generate = false;
@@ -401,7 +476,7 @@ fn main() {
                 }
 
                 Event::Draw => {
-                    if regenerate {
+                    if regenerate && outstanding_events == 0 {
                         generation = generation.overflowing_add(1).0;
                         regenerate = false;
                         for i in 0..tiles {
@@ -440,23 +515,27 @@ fn main() {
                     }
 
                     (|graphics: &mut Graphics, meshes: &mut Assets<Mesh>| {
-                        // Only load one chunk a frame to prevent stutter.
+                        let mut count = 0;
                         while let Ok(generated_terrain) = complete_chunks_receiver.try_recv() {
-                            if generated_terrain.generation == generation {
-                                let (i, j) = generated_terrain.tile_space_position.into();
-                                let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
-                                let mesh_data = mesh.mesh_data.as_mut().unwrap();
-                                generated_terrain.generate_mesh(
-                                    Vec3::new(i as f32, 0.0, j as f32),
-                                    generated_terrain.resolution,
-                                    mesh_size,
-                                    mesh_data,
-                                    &mut mesh_normal_calculator,
-                                );
-                                mesh.update_mesh_on_gpu(graphics);
-                            }
+                            // if generated_terrain.generation == generation {
+                            let (i, j) = generated_terrain.tile_space_position.into();
+                            let mesh = meshes.get_mut(&new_meshes[i * tiles + j]);
+                            let mesh_data = mesh.mesh_data.as_mut().unwrap();
+                            generated_terrain.generate_mesh(
+                                Vec3::new(i as f32, 0.0, j as f32),
+                                generated_terrain.resolution,
+                                mesh_size,
+                                mesh_data,
+                                &mut mesh_normal_calculator,
+                            );
+                            mesh.update_mesh_on_gpu(graphics);
+                            //  }
                             terrain_pool.push(generated_terrain);
                             outstanding_events -= 1;
+                            if count == 2 {
+                                break;
+                            }
+                            count += 1;
                         }
                     })
                     .run(world);
