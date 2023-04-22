@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-koi = {git = "https://github.com/kettle11/koi", default-features=false, features=["graphics", "renderer", "ui", "hdri"]}
+koi = {path = "../koi2", default-features=true}
 clatter = {git = "https://github.com/Ralith/clatter"}

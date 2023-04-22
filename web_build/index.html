@@ -26,18 +26,16 @@
 
 <body style="margin:0; overflow-y: hidden;overflow-x: hidden; touch-action: none;">
     <p id="WebGLSupportMessage">
-        <b>Your browser does not support WebAssembly SIMD</b>
+        <b>A technical error prevented this demo from loading.</b>
+        <br>
+        The most likely cause is your browser does not support WebAssembly SIMD.
         <br>
         <br>
-        This is a cutting-edge experimental demo.
-        <br>
-        <br>
-        Likely you're using Safari which doesn't yet implement the required
-        APIs.
+        If you're using Safari it does not yet implement WebAssembly SIMD.
         Try again in Chrome or Firefox!
         <br>
         <br>
-        If you're using Chrome or Firefox already update your browser.
+        This demo also requires Javascript and WebGL so consider enabling those if you have them disabled.
     </p>
     <canvas id="canvas" style="width:100vw; height: 100vh; " oncontextmenu="return false;"></canvas>
     <script type="module">

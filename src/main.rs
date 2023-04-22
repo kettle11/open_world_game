@@ -36,6 +36,7 @@ where
         core::simd::Simd::<f32, LANES>::splat(y) * frequencies,
     ]) * amplitudes;
 
+    use std::simd::SimdFloat;
     sample.value.reduce_sum() / max_value
 }
 

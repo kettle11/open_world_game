@@ -20,10 +20,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "bytemuck"
-version = "1.8.0"
+name = "bitfrob"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e851ca7c24871e7336801608a4797d7376545b6928a10d32d75685687141ead"
+checksum = "fb18fff2e974c4b95a45f47398bb6ed5b040ccdaac9d41ed045d33dbe960f75f"
+
+[[package]]
+name = "bytemuck"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
 
 [[package]]
 name = "cfg-if"
@@ -40,7 +46,7 @@ checksum = "75476fe966a8af7c0ceae2a3e514afa87d4451741fcdfab8bfaa07ad301842ec"
 [[package]]
 name = "clatter"
 version = "0.1.0"
-source = "git+https://github.com/Ralith/clatter#98cd157dc426ba88ac522a05b151cc8b74714395"
+source = "git+https://github.com/Ralith/clatter#8d3ab141c9d2b4a4ce2a66faa6db55abdeb00981"
 
 [[package]]
 name = "cty"
@@ -71,9 +77,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.5"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d39cd93900197114fa1fcb7ae84ca742095eed9442088988ae74fa744e930e77"
+checksum = "c85e1d9ab2eadba7e5040d4e09cbd6d072b76a557ad64e797c2cb9d4da21d7e4"
 dependencies = [
  "cfg-if",
  "libc",
@@ -106,24 +112,26 @@ checksum = "b6cb717c5ebe824622289dc405a0415152ce835d162d43bf05fd902e394d5609"
 
 [[package]]
 name = "hermit-abi"
-version = "0.1.19"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
+checksum = "ee512640fe35acbfb4bb779db6f0d80704c2cacfa2e39b601ef3e3f47d1ae4c7"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "hound"
-version = "3.4.0"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a164bb2ceaeff4f42542bdb847c41517c78a60f5649671b2a07312b6e117549"
+checksum = "4d13cdbd5dbb29f9c88095bbdc2590c9cba0d0a1269b983fef6b2cdd7e9f4db1"
 
 [[package]]
 name = "imagine"
-version = "0.0.8"
-source = "git+https://github.com/Lokathor/imagine#da17bf5e0bdde3b274bff4799a8e5eb35d516cc9"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c24475037443b4c1d7ae5da440b07ee4eeec46311ed7e5c8cdc97e6ef03948f5"
 dependencies = [
+ "bitfrob",
  "bytemuck",
  "miniz_oxide",
  "wide",
@@ -181,7 +189,6 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "kwasm",
- "wasm_set_stack_pointer",
 ]
 
 [[package]]
@@ -238,6 +245,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinstant"
+version = "0.1.0"
+dependencies = [
+ "kwasm",
+]
+
+[[package]]
 name = "klog"
 version = "0.1.0"
 dependencies = [
@@ -248,6 +262,7 @@ dependencies = [
 name = "kmath"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "kserde",
 ]
 
@@ -260,14 +275,15 @@ dependencies = [
  "imagine",
  "jpeg-decoder",
  "kapp",
+ "kapp_platform_common",
  "kaudio",
  "kcolor",
  "kecs",
  "kgltf",
  "kgraphics",
+ "kinstant",
  "klog",
  "kmath",
- "kphysics",
  "kserde",
  "ktasks",
  "kui",
@@ -281,13 +297,6 @@ name = "kolor"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "933f5089153715eca1db92432ae036e7b10fbc412e3a39c99f0c51e1ceff2de7"
-
-[[package]]
-name = "kphysics"
-version = "0.1.0"
-dependencies = [
- "kmath",
-]
 
 [[package]]
 name = "kreflect_common"
@@ -333,6 +342,7 @@ dependencies = [
  "kapp_platform_common",
  "kcolor",
  "kmath",
+ "kwasm",
  "rect_packer",
 ]
 
@@ -341,7 +351,6 @@ name = "kwasm"
 version = "0.1.0"
 dependencies = [
  "once_cell",
- "wasm_set_stack_pointer",
 ]
 
 [[package]]
@@ -351,15 +360,15 @@ source = "git+https://github.com/Lokathor/lawrencium?rev=4079f8a#4079f8a5b1b92c1
 
 [[package]]
 name = "libc"
-version = "0.2.121"
+version = "0.2.142"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efaa7b300f3b5fe8eb6bf21ce3895e1751d9665086af2d64b42f19701015ff4f"
+checksum = "6a987beff54b60ffa6d51982e1aa1146bc42f19bd26be28b0586f252fccf5317"
 
 [[package]]
 name = "log"
-version = "0.4.14"
+version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
+checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
 ]
@@ -375,18 +384,18 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.5.3"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057a3db23999c867821a7a59feb06a578fcb03685e983dff90daf9e7d24ac08f"
+checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "miniz_oxide"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2b29bd4bc3f33391105ebee3589c19197c4271e3e5a9ec9bfe8127eeff8f082"
+checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
 dependencies = [
  "adler",
 ]
@@ -399,9 +408,9 @@ checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "num_cpus"
-version = "1.13.1"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19e64526ebdee182341572e50e9ad03965aa510cd94427a4549448f285e957a1"
+checksum = "0fac9e2da13b5eb447a6ce3d392f23a29d8694bff781bf03a16cd9ac8697593b"
 dependencies = [
  "hermit-abi",
  "libc",
@@ -418,17 +427,17 @@ dependencies = [
 
 [[package]]
 name = "oddio"
-version = "0.5.0"
-source = "git+https://github.com/Ralith/oddio/#e49692946b2f1425c23af4238462921fb5af41eb"
+version = "0.6.2"
+source = "git+https://github.com/Ralith/oddio/#e840fe58101f3dd6e4ec774271329ddf9ea07201"
 dependencies = [
  "mint",
 ]
 
 [[package]]
 name = "once_cell"
-version = "1.10.0"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
+checksum = "b7e5500299e16ebb147ae15a00a942af264cf3688f47923b8fc2cd5858f23ad3"
 
 [[package]]
 name = "oorandom"
@@ -446,9 +455,9 @@ dependencies = [
 
 [[package]]
 name = "raw-window-handle"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fba75eee94a9d5273a68c9e1e105d9cffe1ef700532325788389e5a83e2522b7"
+checksum = "b800beb9b6e7d2df1fe337c9e3d04e3af22a124460fb4c30fcc22c9117cefb41"
 dependencies = [
  "cty",
 ]
@@ -482,19 +491,15 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wasi"
-version = "0.10.2+wasi-snapshot-preview1"
+version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
-
-[[package]]
-name = "wasm_set_stack_pointer"
-version = "0.1.0"
+checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wide"
-version = "0.7.4"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3aba2d1dac31ac7cae82847ac5b8be822aee8f99a4e100f279605016b185c5f"
+checksum = "b689b6c49d6549434bf944e6b0f39238cf63693cb7a147e9d887507fffa3b223"
 dependencies = [
  "bytemuck",
  "safe_arch",
